@@ -8,15 +8,21 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#1A1A1C",
     "scheme": "rewind",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1A1A1C"
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/00000000-0000-0000-0000-000000000000"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.rewind.app",
-      "deploymentTarget": "16.0",
+      "deploymentTarget": "16.4",
       "backgroundColor": "#1A1A1C",
       "infoPlist": {
         "NSCameraUsageDescription": "Rewind needs camera access to capture your daily photos.",
@@ -48,11 +54,19 @@
             "minSdkVersion": 26
           },
           "ios": {
-            "deploymentTarget": "16.0"
+            "deploymentTarget": "16.4"
           }
         }
       ],
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#1A1A1C"
+        }
+      ],
       "expo-font",
       "expo-image",
       [

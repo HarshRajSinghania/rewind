@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Tests with coverage
+        run: bun run test:coverage
+
+      - name: Expo doctor
+        run: bunx expo-doctor
+
+      - name: Bundle smoke test (Metro export, native only)
+        run: bunx expo export --platform ios --platform android

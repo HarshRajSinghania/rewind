@@ -2,10 +2,11 @@ import React, { forwardRef, useImperativeHandle, useRef, useState, useEffect } f
 import { View, Text, StyleSheet, Platform, Linking, type LayoutChangeEvent } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
 import { useSharedValue } from 'react-native-reanimated';
-import { useRunOnJS } from 'react-native-worklets-core';
+import { useRunOnJS, useSharedValue as useWorkletsSharedValue } from 'react-native-worklets-core';
 import { Colors } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
+import { shouldPropagateFaceUpdate } from '@/utils/alignment';
 import GridOverlay from '@/components/camera/GridOverlay';
 import GhostOverlay from '@/components/camera/GhostOverlay';
 import FaceGuide from '@/components/camera/FaceGuide';
@@ -49,8 +50,13 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
     const device = useCameraDevice(facing);
     const cameraRef = useRef<Camera>(null);
     const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastPropagatedAtRef = useRef(0);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     const contourData = useSharedValue<number[]>([]);
+    // Worklets-runtime counter for frame skipping (see frameProcessor below).
+    // Must use worklets-core's shared value — the frame processor runs on the
+    // worklets runtime, not Reanimated's, so Reanimated values aren't writable there.
+    const frameTick = useWorkletsSharedValue(0);
     const { detectFaces, getCurrentLandmarks, isAvailable: faceDetectionAvailable, sharedValues } = useFaceDetection();
 
     useEffect(() => {
@@ -65,11 +71,26 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
       };
     }, []);
 
+    // Reset face state when the guide (and frame processor) turns off so the
+    // camera screen doesn't act on stale landmarks.
+    useEffect(() => {
+      if (!showFaceGuide) {
+        sharedValues.hasFace.value = false;
+        contourData.value = [];
+        lastPropagatedAtRef.current = 0;
+        onFaceState?.({ hasFace: false, faceX: 0, faceY: 0, faceWidth: 0, faceHeight: 0, yawAngle: 0, rollAngle: 0 });
+      }
+    }, [showFaceGuide, sharedValues, contourData, onFaceState]);
+
     // Single bridge call from frame processor worklet → JS thread.
     // VisionCamera (worklets-core) and Reanimated 4 use different worklet runtimes,
     // so shared values written in the frame processor don't propagate to Reanimated's
     // UI thread. useRunOnJS bridges the gap. We use ONE callback to minimize
     // worklet↔JS thread overhead (was 2-3 per frame, now 1).
+    //
+    // Energy note: shared values (FaceGuide dots) update every frame, but React
+    // state propagation is throttled via shouldPropagateFaceUpdate — a camera
+    // screen re-render costs far more than a native MLKit pass.
     const previewFlipped = facing === 'front' && isMirrored;
     const onFaceResult = useRunOnJS((data: {
       hasFace: boolean;
@@ -83,10 +104,21 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
       rollAngle?: number; yawAngle?: number;
       contour?: number[];
     }) => {
+      const prevHasFace = sharedValues.hasFace.value;
+      const propagate = shouldPropagateFaceUpdate(
+        data.hasFace,
+        prevHasFace,
+        Date.now(),
+        lastPropagatedAtRef.current,
+      );
+      if (propagate) lastPropagatedAtRef.current = Date.now();
+
       if (!data.hasFace) {
         sharedValues.hasFace.value = false;
         contourData.value = [];
-        onFaceState?.({ hasFace: false, faceX: 0, faceY: 0, faceWidth: 0, faceHeight: 0, yawAngle: 0, rollAngle: 0 });
+        if (propagate) {
+          onFaceState?.({ hasFace: false, faceX: 0, faceY: 0, faceWidth: 0, faceHeight: 0, yawAngle: 0, rollAngle: 0 });
+        }
         if (silenceTimerRef.current === null) {
           silenceTimerRef.current = setTimeout(() => {
             onSilence?.(true);
@@ -136,20 +168,26 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
 
       if (data.contour) contourData.value = data.contour;
 
-      onFaceState?.({
-        hasFace: true,
-        faceX: data.faceX!,
-        faceY: data.faceY!,
-        faceWidth: data.faceWidth!,
-        faceHeight: data.faceHeight!,
-        yawAngle: data.yawAngle!,
-        rollAngle: data.rollAngle!,
-      });
+      if (propagate) {
+        onFaceState?.({
+          hasFace: true,
+          faceX: data.faceX!,
+          faceY: data.faceY!,
+          faceWidth: data.faceWidth!,
+          faceHeight: data.faceHeight!,
+          yawAngle: data.yawAngle!,
+          rollAngle: data.rollAngle!,
+        });
+      }
     }, [sharedValues, previewFlipped, contourData, onFaceState]);
 
     const frameProcessor = useFrameProcessor(
       (frame) => {
         'worklet';
+        // Run detection on every 2nd frame (~15Hz on a 30fps stream). Face
+        // alignment changes slowly; full-rate MLKit passes just burn battery.
+        frameTick.value += 1;
+        if (frameTick.value % 2 !== 0) return;
         try {
           const faces = detectFaces(frame);
           if (!faces || faces.length === 0) {
@@ -216,7 +254,7 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
           console.log('[FrameProcessor] error:', e?.message || e);
         }
       },
-      [detectFaces, onFaceResult],
+      [detectFaces, onFaceResult, frameTick],
     );
 
     useImperativeHandle(ref, () => ({
@@ -270,6 +308,10 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
       setContainerSize({ width: w, height: h });
     };
 
+    // The MLKit frame processor only runs while the face guide is visible.
+    // When the guide is off this is a plain preview: no native detection work,
+    // no worklet↔JS bridge traffic, no re-renders.
+    const facePipelineActive = faceDetectionAvailable && showFaceGuide;
     return (
       <View style={styles.container} onLayout={onLayout}>
         <Camera
@@ -278,8 +320,8 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
           device={device}
           isActive={true}
           photo={true}
-          video={faceDetectionAvailable}
-          frameProcessor={faceDetectionAvailable ? frameProcessor : undefined}
+          video={facePipelineActive}
+          frameProcessor={facePipelineActive ? frameProcessor : undefined}
           photoQualityBalance={qualityBalanceMap[photoQuality]}
         />
         {ghostImageUri ? (

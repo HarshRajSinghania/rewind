@@ -1,3 +1,4 @@
+import * as Notifications from 'expo-notifications';
 import type { Album } from '@/types';
 
 const REMINDER_MESSAGES = [
@@ -12,20 +13,14 @@ function getRandomMessage(): string {
   return REMINDER_MESSAGES[Math.floor(Math.random() * REMINDER_MESSAGES.length)];
 }
 
-async function getNotifications() {
-  const Notifications = await import('expo-notifications');
-  return Notifications;
-}
-
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
-    const Notifications = await getNotifications();
     const { status: existing } = await Notifications.getPermissionsAsync();
     if (existing === 'granted') return true;
     const { status } = await Notifications.requestPermissionsAsync();
     return status === 'granted';
   } catch {
-    // expo-notifications not available (e.g. Expo Go on SDK 53+)
+    // expo-notifications not available (e.g. missing native module)
     return false;
   }
 }
@@ -33,7 +28,6 @@ export async function requestNotificationPermission(): Promise<boolean> {
 /** @deprecated Use scheduleAlbumReminder / syncAllReminders instead */
 export async function scheduleDailyReminder(timeStr: string): Promise<void> {
   try {
-    const Notifications = await getNotifications();
     await cancelAllReminders();
     const [hourStr, minuteStr] = timeStr.split(':');
     const hour = parseInt(hourStr, 10);
@@ -57,7 +51,6 @@ export async function scheduleDailyReminder(timeStr: string): Promise<void> {
 
 export async function cancelAllReminders(): Promise<void> {
   try {
-    const Notifications = await getNotifications();
     await Notifications.cancelAllScheduledNotificationsAsync();
   } catch {
     // expo-notifications not available
@@ -66,7 +59,6 @@ export async function cancelAllReminders(): Promise<void> {
 
 export async function scheduleAlbumReminder(album: Album): Promise<void> {
   try {
-    const Notifications = await getNotifications();
     const identifier = `album-reminder-${album.id}`;
     const [hourStr, minuteStr] = album.reminderTime.split(':');
     const hour = parseInt(hourStr, 10);
@@ -93,7 +85,6 @@ export async function scheduleAlbumReminder(album: Album): Promise<void> {
 
 export async function cancelAlbumReminder(albumId: string): Promise<void> {
   try {
-    const Notifications = await getNotifications();
     await Notifications.cancelScheduledNotificationAsync(`album-reminder-${albumId}`).catch(() => {});
   } catch {
     // expo-notifications not available
@@ -102,7 +93,6 @@ export async function cancelAlbumReminder(albumId: string): Promise<void> {
 
 export async function syncAllReminders(albums: Album[]): Promise<void> {
   try {
-    const Notifications = await getNotifications();
     await Notifications.cancelAllScheduledNotificationsAsync();
     for (const album of albums) {
       if (album.reminderEnabled) {
@@ -116,7 +106,6 @@ export async function syncAllReminders(albums: Album[]): Promise<void> {
 
 export async function setupNotificationHandler(): Promise<void> {
   try {
-    const Notifications = await getNotifications();
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,

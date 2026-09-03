@@ -34,7 +34,7 @@ export default function CapturePreview({
       const filename = `rewind_${Date.now()}.jpg`;
       const src = new File(imageUri);
       const dest = new File(Paths.document, filename);
-      src.copy(dest);
+      await src.copy(dest);
       haptics.success();
       onSave(caption, dest.uri);
       setCaption('');

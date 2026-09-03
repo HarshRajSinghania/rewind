@@ -138,7 +138,7 @@ export default function AlbumDetailScreen() {
         const entries = [];
         for (const p of picked) {
           try {
-            entries.push(createPhotoEntry(p.uri, p.date ?? importTargetDate ?? '', '', id));
+            entries.push(await createPhotoEntry(p.uri, p.date ?? importTargetDate ?? '', '', id));
           } catch { /* copy failure — skip this file */ }
         }
         if (entries.length > 0) {

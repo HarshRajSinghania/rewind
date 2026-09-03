@@ -1,0 +1,45 @@
+name: eas-build
+
+# Manual device builds via EAS. Requires an EXPO_TOKEN repo secret
+# (https://expo.dev/accounts/<you>/settings/access-tokens) and a linked
+# project (`eas init` fills in app.json's extra.eas.projectId + updates URL).
+#
+# Usage: Actions → eas-build → Run workflow → pick preview / production.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        required: true
+        default: "preview"
+        type: choice
+        options: [development, preview, production]
+      platform:
+        description: "Platform"
+        required: true
+        default: "all"
+        type: choice
+        options: [all, android, ios]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS build
+        run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive

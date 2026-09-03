@@ -97,7 +97,7 @@ export async function exportToBackup(
     const photo = localPhotos[i];
     const filename = `${photo.date}.jpg`;
     const file = new File(photo.imageUri);
-    const base64 = file.base64();
+    const base64 = await file.base64();
     imagesFolder.file(filename, base64, { base64: true });
     manifest.photos.push({
       id: photo.id,

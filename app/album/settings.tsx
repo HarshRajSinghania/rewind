@@ -266,13 +266,13 @@ export default function AlbumSettingsScreen() {
     }
   }
 
-  function handleImportSave(entries: { uri: string; date: string; caption: string }[]) {
+  async function handleImportSave(entries: { uri: string; date: string; caption: string }[]) {
     // I2: createPhotoEntry now throws on copy failure; collect only successful entries
     const photoEntries = [];
     let copyFailed = 0;
     for (const entry of entries) {
       try {
-        photoEntries.push(createPhotoEntry(entry.uri, entry.date, entry.caption, albumId));
+        photoEntries.push(await createPhotoEntry(entry.uri, entry.date, entry.caption, albumId));
       } catch {
         copyFailed++;
       }

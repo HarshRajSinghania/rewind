@@ -102,12 +102,12 @@ export async function importFromBackup(
 
 // I2: createPhotoEntry treats a failed copy as a HARD failure - throws instead of
 // persisting the volatile picker-cache URI which will be evicted later.
-export function createPhotoEntry(uri: string, date: string, caption: string = '', albumId: string = 'daily-selfie'): PhotoEntry {
+export async function createPhotoEntry(uri: string, date: string, caption: string = '', albumId: string = 'daily-selfie'): Promise<PhotoEntry> {
   const filename = `rewind_import_${Date.now()}.jpg`;
   const src = new File(uri);
   const dest = new File(Paths.document, filename);
   // Intentionally not catching: callers must handle this exception and skip/count as failed
-  src.copy(dest);
+  await src.copy(dest);
   return {
     id: `import_${Date.now()}-${Math.random().toString(36).slice(2, 8)}_${date}`,
     albumId, date, imageUri: dest.uri, caption,

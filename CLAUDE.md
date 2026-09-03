@@ -11,16 +11,20 @@ Always use `bun` — never npm or npx. Use `bun install`, `bun run`, `bunx` for 
 
 - `bun start` — Expo dev server (`bun run ios` / `bun run android` for native builds)
 - `bun run start:mock` — dev server with `EXPO_PUBLIC_MOCK_DATA=1` (seeds mock photos/profile)
-- `bunx tsc --noEmit` — typecheck (no test runner is configured)
+- `bun run typecheck` — `tsc --noEmit`
+- `bun test` — Jest unit/integration tests (`bun run test:coverage` for coverage)
+- `eas build --profile development` / `--profile preview` / `--profile production` — EAS builds
+- `eas update --branch preview --message "..."` — OTA update (JS-only changes)
 
-There is no lint/test script. Verify changes by typechecking and running the app.
+There is no lint script. Verify changes by typechecking + tests and running the app.
 
 ## Tech Stack
 
-- **Expo SDK 55**, React Native 0.83, React 19, **expo-router** (file-based routing)
+- **Expo SDK 57**, React Native 0.86, React 19, **expo-router** (file-based routing)
 - **react-native-vision-camera** + MLKit face detector — capture & face alignment
-- **react-native-reanimated 4** / **react-native-worklets 0.8** — animations & camera worklets
+- **react-native-reanimated 4** / **react-native-worklets 0.10** — animations & camera worklets
 - **@shopify/react-native-skia** — timelapse rendering
+- **expo-updates** — OTA updates via EAS Update (`preview`/`production` channels)
 - Persistence: **AsyncStorage** (metadata) + **expo-file-system** (photo files)
 - Type-only `@/types` (`PhotoEntry`, `UserProfile`, `AppSettings`, `Album`)
 
@@ -43,7 +47,7 @@ There is no lint/test script. Verify changes by typechecking and running the app
 
 ## Gotchas
 
-- **iOS build patch (`patches/expo-modules-core@*.patch`, applied automatically by `bun install`):** worklets 0.8 adds `SymbolType`/`ShareableType` to its `ValueType` enum, but expo-modules-core 55's `toObjCValueType` switch doesn't handle them — a non-exhaustive `enum class` switch that breaks the iOS build. The patch adds the two enum entries + switch cases and is **required for iOS builds** — do not remove it. It's a native `bun patch` (registered under `patchedDependencies` in `package.json`), so it applies deterministically on every install, cross-platform. To change it: `bun patch expo-modules-core`, edit the files, then `bun patch --commit node_modules/expo-modules-core`.
+- **expo-file-system v2 (`File`/`Directory`) is async for `copy`/`move`/`base64`** (since SDK 56) — always `await` them (`copySync`/`moveSync`/`base64Sync` exist but block JS). `write`/`delete`/`create` stay sync.
 - **Ghost overlay alignment is unverified on hardware** — MLKit face detection is simulator-only; landmarks are stored in preview space, so toggling `mirrorSelfies` between capture and view can mirror X alignment. Needs a real-device test before trusting it. See `REFINEMENT_BACKLOG.md`.
 - `REFINEMENT_BACKLOG.md` (untracked) tracks audit findings and remaining taste calls — check it for current status.
 

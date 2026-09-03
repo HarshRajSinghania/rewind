@@ -4,6 +4,21 @@ _From a verified multi-area audit (originally 49 confirmed findings). **Every ac
 
 > **Legend:** `[x]` shipped · `[~]` partial · `[ ]` open · 🎨 deferred taste call
 
+## ✅ Infra wave (Sep 2026)
+
+| What | Detail |
+|------|--------|
+| SDK 55 → 57 | `expo@57.0.19`, RN 0.86.3, TS 6.0.3, worklets 0.10. Fixes the SDK 56 Hermes V1 memory regression (hit this app's reanimated/worklets stack). Direct jump justified: 56's only value was Expo UI/router fork, neither used here |
+| File-system async migration | SDK 56 made `copy`/`move`/`base64` async — `createPhotoEntry` + `CapturePreview` save + import/export now `await` (export's un-awaited `base64()` only worked by accident via JSZip promise-input) |
+| Deployment target | iOS 16.0 → 16.4 (SDK 57 minimum); root `splash` → `expo-splash-screen` plugin; `absoluteFillObject` (removed in RN 0.86) inlined; stale `expo-modules-core` iOS patch dropped (fixed upstream via `default:` case) |
+| EAS | `eas.json` (development/preview/production + submit), `expo-updates` + `runtimeVersion: appVersion`. Still needs: `eas init` (projectId placeholder is zeros), `EXPO_TOKEN` secret, first device build |
+| Tests | Jest + `jest-expo` + RNTL v14, 103 tests, ~83% line coverage w/ enforced thresholds. Pure extractions: `utils/streak.ts`, `utils/alignment.ts`. Mocks: AsyncStorage, expo-haptics/crypto/notifications/localization, in-memory `File`/`Directory` |
+| CI | `.github/workflows/ci.yml` (bun install → typecheck → jest coverage → doctor → Metro export); `eas-build.yml` (manual dispatch, needs `EXPO_TOKEN`) |
+| Bugs found by tests | `getDayNumber` DST undercount (`floor` across 23h days) + afternoon inflation (compared against now instead of today-midnight); `addPhotos` return counts depended on React eager-eval timing (fixed via `photosRef` mirror) |
+| Auto-capture efficiency | Frame processor + `video` now gated on face-guide visibility (was always-on); every-2nd-frame MLKit skip via worklets shared value; React propagation throttled to ~10Hz (presence changes instant); stale face state reset on guide-off |
+
+## 🔬 Needs on-device verification
+
 ## ✅ Shipped
 
 | Commit | What |

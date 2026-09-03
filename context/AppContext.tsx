@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { File } from 'expo-file-system';
 import type { PhotoEntry, UserProfile, AppSettings, Album } from '@/types';
 import { savePhotos, loadPhotos, saveProfile, loadProfile, saveSettings, loadSettings, getDefaultSettings, saveAlbums, loadAlbums, clearAllData, saveUnlockedAlbumIds, loadUnlockedAlbumIds } from '@/utils/storage';
@@ -50,6 +50,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [albums, setAlbums] = useState<Album[]>(DEFAULT_ALBUMS);
   const [isLoading, setIsLoading] = useState(true);
   const [unlockedAlbumIds, setUnlockedAlbumIds] = useState<Set<string>>(new Set());
+
+  // Synchronous mirror of `photos` for event handlers that must compute against
+  // current state (e.g. addPhotos dedup counts). setState updaters run
+  // asynchronously, so counting inside an updater makes the returned counts
+  // depend on React's eager-evaluation timing — this ref is always fresh.
+  const photosRef = useRef<PhotoEntry[]>([]);
+  photosRef.current = photos;
 
   const unlockAlbum = useCallback((id: string) => {
     setUnlockedAlbumIds(prev => {
@@ -159,27 +166,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addPhotos = useCallback((entries: PhotoEntry[]): { added: number; skipped: number } => {
-    let added = 0;
+    // Dedup synchronously against the ref mirror so counts are deterministic.
+    // The setPhotos updater re-checks against prev as a guard for batched calls.
+    const seen = new Set(photosRef.current.map(p => `${p.albumId}:${p.date}`));
+    const toAdd: PhotoEntry[] = [];
     let skipped = 0;
-    setPhotos(prev => {
-      const existing = new Set(prev.map(p => `${p.albumId}:${p.date}`));
-      const toAdd: PhotoEntry[] = [];
-      for (const entry of entries) {
-        const key = `${entry.albumId}:${entry.date}`;
-        if (existing.has(key)) {
-          skipped++;
-        } else {
-          existing.add(key);
-          toAdd.push(entry);
-          added++;
-        }
+    for (const entry of entries) {
+      const key = `${entry.albumId}:${entry.date}`;
+      if (seen.has(key)) {
+        skipped++;
+      } else {
+        seen.add(key);
+        toAdd.push(entry);
       }
-      if (toAdd.length === 0) return prev;
-      const next = [...prev, ...toAdd].sort((a, b) => a.date.localeCompare(b.date));
-      fireAndSave(() => savePhotos(next));
-      return next;
-    });
-    return { added, skipped };
+    }
+    if (toAdd.length > 0) {
+      setPhotos(prev => {
+        const prevKeys = new Set(prev.map(p => `${p.albumId}:${p.date}`));
+        const fresh = toAdd.filter(e => !prevKeys.has(`${e.albumId}:${e.date}`));
+        if (fresh.length === 0) return prev;
+        const next = [...prev, ...fresh].sort((a, b) => a.date.localeCompare(b.date));
+        fireAndSave(() => savePhotos(next));
+        return next;
+      });
+    }
+    return { added: toAdd.length, skipped };
   }, []);
 
   const updatePhoto = useCallback((id: string, updates: Partial<PhotoEntry>) => {

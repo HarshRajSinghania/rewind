@@ -26,6 +26,9 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# test coverage (regenerate with `bun run test:coverage`)
+coverage/
+
 # macOS
 .DS_Store
 *.pem

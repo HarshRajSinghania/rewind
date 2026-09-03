@@ -16,6 +16,7 @@ import TimerSelector from '@/components/camera/TimerSelector';
 import CapturePreview from '@/components/camera/CapturePreview';
 import type { ViewfinderRef } from '@/components/camera/Viewfinder';
 import { useAutoCapture } from '@/hooks/useAutoCapture';
+import { computeAlignmentScore } from '@/utils/alignment';
 import { UserFocus, CaretLeft } from 'phosphor-react-native';
 import type { PhotoEntry, FaceLandmarks } from '@/types';
 
@@ -148,6 +149,7 @@ export default function CameraScreen() {
   const handleTimerToggle = () => setShowTimer(prev => !prev);
   const handleFaceGuideToggle = () => {
     if (!faceDetectionAvailable) return;
+    setFaceSilence(false);
     setShowFaceGuide(prev => !prev);
   };
   const handleAvailabilityChange = useCallback((available: boolean) => {
@@ -175,49 +177,13 @@ export default function CameraScreen() {
   const alignmentTarget = referenceTarget ?? mostRecentPhoto?.faceLandmarks?.faceBounds ?? null;
   const hasAlignmentTarget = alignmentTarget !== null;
 
-  function computeAlignmentScore(face: FaceState): number {
-    if (!face.hasFace) return 0;
-
-    let targetCX = 0.5;
-    let targetCY = 0.5;
-    let targetW = 0.3;
-    let targetH = 0.4;
-
-    if (alignmentTarget) {
-      targetCX = alignmentTarget.x + alignmentTarget.width / 2;
-      targetCY = alignmentTarget.y + alignmentTarget.height / 2;
-      targetW = alignmentTarget.width;
-      targetH = alignmentTarget.height;
-    }
-
-    const cx = face.faceX + face.faceWidth / 2;
-    const cy = face.faceY + face.faceHeight / 2;
-
-    const dx = cx - targetCX;
-    const dy = cy - targetCY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const positionScore = Math.max(0, 1 - dist * 4);
-
-    // Gate: face must be reasonably close to target position before other
-    // factors (size, yaw, roll) can contribute to the score.
-    if (positionScore < 0.1) return 0;
-
-    const area = face.faceWidth * face.faceHeight;
-    const targetArea = targetW * targetH;
-    const areaRatio = targetArea > 0 ? Math.min(area / targetArea, targetArea / area) : 0;
-    const sizeScore = areaRatio;
-
-    const yawScore = Math.max(0, 1 - Math.abs(face.yawAngle) / 45);
-    const rollScore = Math.max(0, 1 - Math.abs(face.rollAngle) / 30);
-
-    return positionScore * 0.45 + sizeScore * 0.20 + yawScore * 0.20 + rollScore * 0.15;
-  }
-
-  const alignmentScore = computeAlignmentScore(faceState);
+  const alignmentScore = computeAlignmentScore(faceState, alignmentTarget);
 
   // Lower threshold when bootstrapping (no target yet) so first capture is easier
   const alignmentThreshold = hasAlignmentTarget ? 0.75 : 0.65;
 
+  // Note: face-state ticks arrive throttled at ~10Hz (see Viewfinder), so
+  // requiredFrames doubles as a hold duration: 15 ≈ 1.5s, 10 ≈ 1s.
   const { progress: autoCaptureProgress, isInCooldown: autoCaptureCooldown } = useAutoCapture({
     enabled: showFaceGuide && faceState.hasFace,
     alignmentScore,

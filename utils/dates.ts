@@ -27,8 +27,11 @@ export function formatDateLabel(date: string): string {
 
 export function getDayNumber(joinDate: string, currentDate?: string): number {
   const join = new Date(joinDate + 'T00:00:00');
-  const current = currentDate ? new Date(currentDate + 'T00:00:00') : new Date();
-  const diff = Math.floor((current.getTime() - join.getTime()) / (1000 * 60 * 60 * 24));
+  // Compare at date precision (today at midnight, not right now): comparing
+  // against the current time inflates the count by half a day every afternoon.
+  const current = new Date((currentDate ?? getToday()) + 'T00:00:00');
+  // round (not floor): a DST-shortened 23h day must still count as one day
+  const diff = Math.round((current.getTime() - join.getTime()) / (1000 * 60 * 60 * 24));
   return Math.max(1, diff + 1); // Day 1 minimum, even with timezone edge cases
 }
 
