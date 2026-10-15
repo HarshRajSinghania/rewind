@@ -23,8 +23,12 @@ export interface FaceFrameLayout {
   height: number;
   left: number;
   top: number;
-  /** Rotation pivot (the eye midpoint) in the image's own box, e.g. "200px 200px". */
-  transformOrigin: string;
+  /**
+   * Rotation pivot (the eye midpoint) in the image's own box, as RN's [x, y, z] array.
+   * Not a "Xpx Ypx" string: RN's string parser only takes integer px and throws on
+   * fractional pivots.
+   */
+  transformOrigin: [number, number, number];
   /** Radians about transformOrigin; levels the eye line. */
   rotation: number;
 }
@@ -72,7 +76,7 @@ export function computeFaceTransform(
     height: scan.height * s,
     left: container.w / 2 - midX,
     top: EYE_ANCHOR_Y * container.h - midY,
-    transformOrigin: `${midX}px ${midY}px`,
+    transformOrigin: [midX, midY, 0],
     rotation: -g.angle,
   };
 }

@@ -6,6 +6,8 @@ import {
   type FaceFrameLayout,
 } from '@/utils/faceAlign';
 import type { FaceScan } from '@/types';
+// The same parser RN applies to the style prop on device.
+import processTransformOrigin from 'react-native/Libraries/StyleSheet/processTransformOrigin';
 
 const BOX = { w: 300, h: 400 };
 const ANCHOR = { x: BOX.w / 2, y: EYE_ANCHOR_Y * BOX.h }; // (150, 160)
@@ -19,7 +21,7 @@ function project(layout: FaceFrameLayout, s: FaceScan, p: { x: number; y: number
   const k = layout.width / s.width;
   const x = layout.left + p.x * s.width * k;
   const y = layout.top + p.y * s.height * k;
-  const [ox, oy] = layout.transformOrigin.split(' ').map((v) => parseFloat(v));
+  const [ox, oy] = layout.transformOrigin;
   const cx = layout.left + ox;
   const cy = layout.top + oy;
   const cos = Math.cos(layout.rotation);
@@ -70,6 +72,15 @@ describe('computeFaceTransform', () => {
     const mid = project(layout, s, { x: 0.5, y: 0.5 });
     expect(mid.x).toBeCloseTo(ANCHOR.x, 6);
     expect(mid.y).toBeCloseTo(ANCHOR.y, 6);
+  });
+
+  it('gives a transformOrigin React Native accepts for fractional pivots', () => {
+    // RN's string parser only takes integer px ("150.77px" splits into bogus parts and
+    // throws "Transform origin must have exactly 3 values" on device); real pivots are
+    // fractional, so the origin must be the exact [x, y, z] array form.
+    const layout = computeFaceTransform(scan([0.4013, 0.4883], [0.5889, 0.509], 1024, 1365), BOX, 57.73)!;
+    expect(() => processTransformOrigin(layout.transformOrigin)).not.toThrow();
+    expect(processTransformOrigin(layout.transformOrigin)).toEqual(layout.transformOrigin);
   });
 
   it('returns null when it cannot align', () => {

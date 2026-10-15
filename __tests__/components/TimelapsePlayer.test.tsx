@@ -73,7 +73,7 @@ describe('TimelapsePlayer alignment', () => {
     expect(f.style.height).toBeCloseTo(400, 6);
     expect(f.style.left).toBeCloseTo(-50, 6);
     expect(f.style.top).toBeCloseTo(-40, 6);
-    expect(f.style.transformOrigin).toBe('200px 200px');
+    expect(f.style.transformOrigin).toEqual([200, 200, 0]);
     expect(f.style.transform).toEqual([{ rotate: '0rad' }]);
     expect(f.contentFit).toBe('fill');
     expect(f.transition).toBe(0);
