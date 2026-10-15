@@ -9,7 +9,8 @@ jest.mock('expo-image', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
-    Image: (props: Record<string, unknown>) => React.createElement(View, { testID: 'frame', ...props }),
+    Image: (props: { source?: { uri?: string } }) =>
+      React.createElement(View, { testID: `frame:${props.source?.uri}`, ...props }),
   };
 });
 jest.mock('phosphor-react-native', () => ({
@@ -57,9 +58,24 @@ async function renderPlayer(props: PlayerProps = {}, { layout = true } = {}) {
 
 type FrameProps = { contentFit?: string; transition?: number; style: Record<string, unknown> };
 
+const uriOf = (p: PhotoEntry) => p.imageUri;
+
+/** Every rendered frame image, as { uri, visible, ...props }. */
+function frames() {
+  return screen.queryAllByTestId(/^frame:/).map((el) => ({
+    ...(el.props as object),
+    uri: String(el.props.testID).slice('frame:'.length),
+    style: StyleSheet.flatten(el.props.style) as Record<string, unknown>,
+    visible: StyleSheet.flatten(el.props.style)?.opacity !== 0,
+    el,
+  })) as (FrameProps & { uri: string; visible: boolean; el: ReturnType<typeof screen.getByTestId> })[];
+}
+
+/** The single frame actually on screen. */
 function frame(): FrameProps {
-  const el = screen.getByTestId('frame');
-  return { ...(el.props as object), style: StyleSheet.flatten(el.props.style) } as FrameProps;
+  const shown = frames().filter((f) => f.visible);
+  expect(shown).toHaveLength(1);
+  return shown[0];
 }
 
 describe('TimelapsePlayer alignment', () => {
@@ -79,15 +95,34 @@ describe('TimelapsePlayer alignment', () => {
     expect(f.transition).toBe(0);
   });
 
-  it('clears an aligned frame while the next one loads instead of showing it at the new position', async () => {
-    // expo-image keeps the previous source on screen until the new one decodes, but the
-    // new frame's layout applies immediately — without a per-frame recyclingKey the old
-    // face jumps to the new transform for the decode latency.
+  it('keeps the aligned frame on screen until the next one has loaded, then swaps', async () => {
+    // A single <Image> either shows the old face at the new transform while the next
+    // source decodes, or (with recyclingKey) blanks — measured on device as a flash on
+    // most 4x transitions. The next frame must load hidden in its own layout first.
     const ref = React.createRef<TimelapsePlayerHandle>();
     await renderPlayer({ align: true, ref });
-    expect((frame() as { recyclingKey?: string }).recyclingKey).toBe(PHOTOS[0].id);
+    await fireEvent(frames()[0].el, 'load'); // first frame decoded and on screen
     await act(async () => { ref.current!.seekTo(1); });
-    expect((frame() as { recyclingKey?: string }).recyclingKey).toBe(PHOTOS[1].id);
+
+    const [old, next] = [frames().find((f) => f.uri === uriOf(PHOTOS[0]))!, frames().find((f) => f.uri === uriOf(PHOTOS[1]))!];
+    expect(old.visible).toBe(true);
+    expect(next.visible).toBe(false);
+    expect(next.style.position).toBe('absolute'); // already in its own aligned layout
+    expect((next as { recyclingKey?: string }).recyclingKey).toBeUndefined();
+
+    await fireEvent(next.el, 'load');
+    expect(frames().map((f) => f.uri)).toEqual([uriOf(PHOTOS[1])]);
+    expect(frame().style.position).toBe('absolute');
+  });
+
+  it('swaps on a load error too, so a broken file cannot freeze playback', async () => {
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, ref });
+    await fireEvent(frames()[0].el, 'load');
+    await act(async () => { ref.current!.seekTo(1); });
+    expect(frames()).toHaveLength(2);
+    await fireEvent(frames().find((f) => f.uri === uriOf(PHOTOS[1]))!.el, 'error');
+    expect(frames().map((f) => f.uri)).toEqual([uriOf(PHOTOS[1])]);
   });
 
   it('plays as before when alignment is off', async () => {
@@ -102,6 +137,7 @@ describe('TimelapsePlayer alignment', () => {
     const ref = React.createRef<TimelapsePlayerHandle>();
     await renderPlayer({ align: true, ref });
     await act(async () => { ref.current!.seekTo(2); });
+    await fireEvent(frames().find((f) => f.uri === uriOf(PHOTOS[2]))!.el, 'load');
     expect(frame().contentFit).toBe('cover');
   });
 

@@ -147,43 +147,71 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
     // Defensive clamp: guard against a render cycle before the useEffect fires.
     const safeIndex = photos.length > 0 ? Math.min(frameIndex, photos.length - 1) : 0;
     const current = photos[safeIndex];
-    const faceLayout = current?.faceScan && size && targetEyeDist
-      ? computeFaceTransform(current.faceScan, size, targetEyeDist)
-      : null;
+
+    // Aligned playback double-buffers: the frame on screen stays (in its own layout)
+    // while the next one loads hidden in *its* layout, then they swap in one commit.
+    // A single <Image> would show the old face at the new transform during the decode,
+    // or blank (recyclingKey) — a flash on most 4x transitions on device.
+    const [shownId, setShownId] = useState<string | null>(null);
+    const aligning = align && !!size && targetEyeDist != null;
+    const shown = (aligning && photos.find((p) => p.id === shownId)) || current;
+    const alignedFrames = aligning && current
+      ? (shown.id === current.id ? [current] : [shown, current])
+      : [];
+
+    function frameProps(photo: PhotoEntry) {
+      const layout = photo.faceScan && size && targetEyeDist
+        ? computeFaceTransform(photo.faceScan, size, targetEyeDist)
+        : null;
+      if (!layout) return { style: StyleSheet.absoluteFill, contentFit: 'cover' as const };
+      return {
+        // Zoom is baked into width/height (not a scale transform) so expo-image
+        // decodes at the frame's layout size, not the full-res photo (a zoom-capped
+        // far-away face can still approach full res).
+        style: {
+          position: 'absolute' as const,
+          left: layout.left,
+          top: layout.top,
+          width: layout.width,
+          height: layout.height,
+          transformOrigin: layout.transformOrigin,
+          transform: [{ rotate: `${layout.rotation}rad` }],
+        },
+        contentFit: 'fill' as const,
+      };
+    }
 
     return (
       <View style={styles.wrapper}>
         <View style={styles.screen} onLayout={handleLayout} testID="timelapse-screen">
-          {current && (faceLayout ? (
-            <Image
-              source={getImageSource(current.imageUri)}
-              // Zoom is baked into width/height (not a scale transform) so expo-image
-              // decodes at the frame's layout size, not the full-res photo (a zoom-capped
-              // far-away face can still approach full res).
-              style={{
-                position: 'absolute',
-                left: faceLayout.left,
-                top: faceLayout.top,
-                width: faceLayout.width,
-                height: faceLayout.height,
-                transformOrigin: faceLayout.transformOrigin,
-                transform: [{ rotate: `${faceLayout.rotation}rad` }],
-              }}
-              contentFit="fill"
-              // Hard cut: crossfading one <Image> would blend the old frame at the new transform.
-              transition={0}
-              // The layout applies at once but the new source decodes later; a per-frame
-              // key blanks the view meanwhile instead of showing the old face at the new spot.
-              recyclingKey={current.id}
-            />
-          ) : (
+          {aligning ? (
+            alignedFrames.map((photo) => {
+              const { style, contentFit } = frameProps(photo);
+              const pending = photo.id !== shown.id;
+              // Every load marks its frame as shown — the first frame too, so the next
+              // seek has a frame to hold on screen.
+              const reveal = () => setShownId(photo.id);
+              return (
+                <Image
+                  key={photo.id}
+                  source={getImageSource(photo.imageUri)}
+                  style={[style, pending && styles.pendingFrame]}
+                  contentFit={contentFit}
+                  transition={0}
+                  // Swap on error too, so one broken file can't freeze playback.
+                  onLoad={reveal}
+                  onError={reveal}
+                />
+              );
+            })
+          ) : current && (
             <Image
               source={getImageSource(current.imageUri)}
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               transition={150}
             />
-          ))}
+          )}
 
           <View style={styles.badge}>
             <Text style={[styles.badgeText, { fontFamily: fonts.regular }]}>
@@ -244,6 +272,9 @@ const styles = StyleSheet.create({
   badgeRight: {
     left: undefined,
     right: 16,
+  },
+  pendingFrame: {
+    opacity: 0,
   },
   badgeText: {
     fontFamily: Fonts.mono.regular,
