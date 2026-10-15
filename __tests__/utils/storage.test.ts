@@ -64,6 +64,12 @@ describe('storage', () => {
     expect(await loadSettings()).toEqual(getDefaultSettings());
   });
 
+  it('defaults alignFaces to true, including for settings saved before the field existed', async () => {
+    expect(getDefaultSettings().alignFaces).toBe(true);
+    await AsyncStorage.setItem('@rewind/settings', JSON.stringify({ mirrorSelfies: false, use24hClock: true }));
+    expect((await loadSettings()).alignFaces).toBe(true);
+  });
+
   it('returns null for missing albums and survives corruption', async () => {
     expect(await loadAlbums()).toBeNull();
     await AsyncStorage.setItem('@rewind/albums', 'corrupt');

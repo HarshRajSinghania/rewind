@@ -27,6 +27,7 @@ interface AppContextValue {
   addPhoto: (entry: PhotoEntry) => void;
   addPhotos: (entries: PhotoEntry[]) => { added: number; skipped: number };
   updatePhoto: (id: string, updates: Partial<PhotoEntry>) => void;
+  updatePhotos: (patches: Record<string, Partial<PhotoEntry>>) => void;
   deletePhoto: (id: string) => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
@@ -201,6 +202,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Batched variant of updatePhoto: one state update + one save for many photos.
+  // updatePhoto rewrites the whole array per call, so a 240-photo face-scan backfill
+  // through it would mean 240 full writes. Ids not present (e.g. a photo deleted
+  // mid-scan) are ignored.
+  const updatePhotos = useCallback((patches: Record<string, Partial<PhotoEntry>>) => {
+    if (Object.keys(patches).length === 0) return;
+    setPhotos(prev => {
+      const next = prev.map(p =>
+        Object.prototype.hasOwnProperty.call(patches, p.id) ? { ...p, ...patches[p.id] } : p
+      );
+      fireAndSave(() => savePhotos(next));
+      return next;
+    });
+  }, []);
+
   const deletePhoto = useCallback((id: string) => {
     setPhotos(prev => {
       const target = prev.find(p => p.id === id);
@@ -358,6 +374,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addPhoto,
         addPhotos,
         updatePhoto,
+        updatePhotos,
         deletePhoto,
         updateProfile: handleUpdateProfile,
         updateSettings: handleUpdateSettings,

@@ -173,6 +173,43 @@ describe('AppContext', () => {
     await unmount();
   });
 
+  it('updatePhotos patches several photos with a single save and ignores unknown ids', async () => {
+    const { unmount } = await renderProvider();
+    await act(async () => {
+      ctx!.addPhotos([
+        photo({ id: 'p1', date: '2026-03-08' }),
+        photo({ id: 'p2', date: '2026-03-09' }),
+        photo({ id: 'p3', date: '2026-03-10' }),
+      ]);
+    });
+    await waitFor(async () => expect(await storedPhotos()).toHaveLength(3));
+
+    const setItem = jest.mocked(AsyncStorage.setItem);
+    setItem.mockClear();
+    await act(async () => {
+      // 'gone' = a photo deleted while its face scan was in flight
+      ctx!.updatePhotos({ p1: { caption: 'one' }, p3: { caption: 'three' }, gone: { caption: 'x' } });
+    });
+
+    await waitFor(async () =>
+      expect((await storedPhotos()).map((p) => p.caption)).toEqual(['one', '', 'three']),
+    );
+    expect(setItem.mock.calls.filter(([key]) => key === '@rewind/photos')).toHaveLength(1);
+    expect(ctx!.photos.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+    await unmount();
+  });
+
+  it('updatePhotos with no patches does not write photos', async () => {
+    const { unmount } = await renderProvider();
+    const setItem = jest.mocked(AsyncStorage.setItem);
+    setItem.mockClear();
+    await act(async () => {
+      ctx!.updatePhotos({});
+    });
+    expect(setItem.mock.calls.filter(([key]) => key === '@rewind/photos')).toHaveLength(0);
+    await unmount();
+  });
+
   it('manages albums: add/update/delete with single-album guard', async () => {
     const { unmount } = await renderProvider();
     await act(async () => {

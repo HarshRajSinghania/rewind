@@ -15,6 +15,7 @@ export function getDefaultSettings(): AppSettings {
     cloudBackupEnabled: false,
     mirrorSelfies: true,
     use24hClock: false,
+    alignFaces: true,
   };
 }
 
