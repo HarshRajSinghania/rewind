@@ -238,8 +238,6 @@ export default function AlbumDetailScreen() {
             icon={<Camera size={40} color={Colors.textTertiary} weight="light" />}
             message="no photos yet"
             subtitle="capture your first photo to start your streak"
-            ctaLabel="take a photo"
-            onCta={() => { haptics.tap(); router.push({ pathname: '/(tabs)/camera', params: { albumId: id } }); }}
           />
         </View>
       ) : (
