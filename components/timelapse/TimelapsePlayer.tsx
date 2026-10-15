@@ -158,7 +158,8 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
             <Image
               source={getImageSource(current.imageUri)}
               // Zoom is baked into width/height (not a scale transform) so expo-image
-              // decodes at on-screen size rather than the full-res photo.
+              // decodes at the frame's layout size, not the full-res photo (a zoom-capped
+              // far-away face can still approach full res).
               style={{
                 position: 'absolute',
                 left: faceLayout.left,
@@ -171,6 +172,9 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
               contentFit="fill"
               // Hard cut: crossfading one <Image> would blend the old frame at the new transform.
               transition={0}
+              // The layout applies at once but the new source decodes later; a per-frame
+              // key blanks the view meanwhile instead of showing the old face at the new spot.
+              recyclingKey={current.id}
             />
           ) : (
             <Image

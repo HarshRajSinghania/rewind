@@ -79,6 +79,17 @@ describe('TimelapsePlayer alignment', () => {
     expect(f.transition).toBe(0);
   });
 
+  it('clears an aligned frame while the next one loads instead of showing it at the new position', async () => {
+    // expo-image keeps the previous source on screen until the new one decodes, but the
+    // new frame's layout applies immediately — without a per-frame recyclingKey the old
+    // face jumps to the new transform for the decode latency.
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, ref });
+    expect((frame() as { recyclingKey?: string }).recyclingKey).toBe(PHOTOS[0].id);
+    await act(async () => { ref.current!.seekTo(1); });
+    expect((frame() as { recyclingKey?: string }).recyclingKey).toBe(PHOTOS[1].id);
+  });
+
   it('plays as before when alignment is off', async () => {
     await renderPlayer({ align: false });
     const f = frame();
