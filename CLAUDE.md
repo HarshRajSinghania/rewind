@@ -23,7 +23,6 @@ There is no lint script. Verify changes by typechecking + tests and running the 
 - **Expo SDK 57**, React Native 0.86, React 19, **expo-router** (file-based routing)
 - **react-native-vision-camera** + MLKit face detector — capture & face alignment
 - **react-native-reanimated 4** / **react-native-worklets 0.10** — animations & camera worklets
-- **@shopify/react-native-skia** — timelapse rendering
 - **expo-updates** — OTA updates via EAS Update (`preview`/`production` channels)
 - Persistence: **AsyncStorage** (metadata) + **expo-file-system** (photo files)
 - Type-only `@/types` (`PhotoEntry`, `UserProfile`, `AppSettings`, `Album`)
