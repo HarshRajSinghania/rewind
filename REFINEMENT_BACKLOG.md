@@ -50,6 +50,7 @@ _From a verified multi-area audit (originally 49 confirmed findings). **Every ac
 ## 🔬 Needs on-device verification
 
 - [~] **Ghost overlay landmark alignment** (`7e457ca`) — wired and reviewed-correct, but MLKit is simulator-only so real alignment is unconfirmed. **Known limitation:** ghost landmarks are stored in preview space, so toggling `mirrorSelfies` between capture and view (+ the save-time front-camera flip) can mirror the X alignment. **Resolve after hardware test** — likely by persisting capture-time mirror/facing state on `PhotoEntry` and reconciling; confirm the image-vs-landmark orientation against real frames first.
+- [ ] **Timelapse face alignment** (`feat/timelapse-face-align`) — unit-tested, never run on hardware. Check on iOS **and** Android: (1) the existing dev client exposes `NativeModules.ImageFaceDetector` (toggle visible in the timelapse speed row; if hidden, rebuild the dev client); (2) eyes stay locked across front- and back-camera shots, `mirrorSelfies` on and off; (3) a library-imported photo and an EXIF-rotated JPEG align (Android detector ignores EXIF — the upright copy in `utils/faceScan.ts` is the fix); (4) `transformOrigin` + `rotate` pivot on the eye midpoint on both platforms (a tilted-head shot should level, not swing); (5) first-open scan time on a large album (`aligning n/m` badge) and memory during playback.
 
 ## 📌 Open sub-items
 
