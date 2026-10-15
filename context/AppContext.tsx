@@ -12,8 +12,13 @@ function fireAndSave(saveFn: () => Promise<void>): void {
 
 let saveQueue = Promise.resolve();
 
+// Serial so writes can't race; the catch keeps the queue alive after a failure and
+// surfaces it (log + haptic) instead of leaving an unhandled rejection.
 function enqueueSave(saveFn: () => Promise<void>): void {
-  saveQueue = saveQueue.then(saveFn, saveFn);
+  saveQueue = saveQueue.then(saveFn).catch(e => {
+    console.error('Storage write failed:', e);
+    haptics.error();
+  });
 }
 
 const DEFAULT_ALBUMS: Album[] = [];

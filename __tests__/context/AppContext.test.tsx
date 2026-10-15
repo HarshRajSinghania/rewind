@@ -2,6 +2,7 @@ import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { render, waitFor, act } from '@testing-library/react-native';
 import * as Notifications from 'expo-notifications';
+import * as Haptics from 'expo-haptics';
 import { AppProvider, useAppContext } from '@/context/AppContext';
 import type { PhotoEntry, Album } from '@/types';
 import { fileStore, deletedUris, resetFileSystemMock } from '../helpers/fileSystemMock';
@@ -196,6 +197,29 @@ describe('AppContext', () => {
     );
     expect(setItem.mock.calls.filter(([key]) => key === '@rewind/photos')).toHaveLength(1);
     expect(ctx!.photos.map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+    await unmount();
+  });
+
+  it('reports a failed save (log + error haptic) and keeps saving afterwards', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { unmount } = await renderProvider();
+    await act(async () => {
+      ctx!.addPhoto(photo({ id: 'p1', caption: 'old' }));
+    });
+    await waitFor(async () => expect(await storedPhotos()).toHaveLength(1));
+
+    jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('disk full'));
+    await act(async () => {
+      ctx!.updatePhoto('p1', { caption: 'lost' });
+    });
+    await waitFor(() => expect(errorSpy).toHaveBeenCalledWith('Storage write failed:', expect.any(Error)));
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith('error');
+
+    await act(async () => {
+      ctx!.updatePhoto('p1', { caption: 'saved' });
+    });
+    await waitFor(async () => expect((await storedPhotos())[0].caption).toBe('saved'));
+    errorSpy.mockRestore();
     await unmount();
   });
 
