@@ -17,7 +17,7 @@ const native = NativeModules as Record<string, unknown>;
 
 function mockManipulator(size = { width: 1024, height: 1365 }) {
   const ref = { saveAsync: jest.fn(async () => ({ uri: TMP, ...size })), release: jest.fn() };
-  const ctx = { resize: jest.fn(), renderAsync: jest.fn(async () => ref) };
+  const ctx = { resize: jest.fn(), renderAsync: jest.fn(async () => ref), release: jest.fn() };
   ctx.resize.mockReturnValue(ctx);
   jest.mocked(ImageManipulator.manipulate).mockReturnValue(ctx as never);
   fileStore.set(TMP, 'jpeg-bytes');
@@ -117,6 +117,19 @@ describe('scanPhoto', () => {
     ref.saveAsync.mockRejectedValueOnce(new Error('disk full'));
     await expect(scanPhoto(SRC)).rejects.toThrow('disk full');
     expect(ref.release).toHaveBeenCalledTimes(2);
+  });
+
+  it('releases the manipulator context once rendered, even if rendering fails', async () => {
+    // The context keeps its own bitmap and, unlike ImageRef, reports no memory
+    // pressure to the GC — unreleased, hundreds pile up during a backfill.
+    const { ctx } = mockManipulator();
+    jest.mocked(detectFaces).mockResolvedValue([]);
+    await scanPhoto(SRC);
+    expect(ctx.release).toHaveBeenCalledTimes(1);
+
+    ctx.renderAsync.mockRejectedValueOnce(new Error('cannot render'));
+    await expect(scanPhoto(SRC)).rejects.toThrow('cannot render');
+    expect(ctx.release).toHaveBeenCalledTimes(2);
   });
 
   it('propagates a manipulator error without calling the detector', async () => {

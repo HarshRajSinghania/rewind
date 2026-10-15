@@ -49,12 +49,19 @@ function isPresent(p: Point | undefined): p is Point {
 export async function scanPhoto(uri: string): Promise<FaceScan | 'unavailable'> {
   if (!isFaceScanAvailable()) return 'unavailable';
 
-  const rendered = await ImageManipulator.manipulate(uri).resize({ width: SCAN_WIDTH }).renderAsync();
+  // Free native bitmaps as soon as they're done with: a backfill runs hundreds of
+  // these back to back, and the context reports no memory pressure to the GC.
+  const context = ImageManipulator.manipulate(uri).resize({ width: SCAN_WIDTH });
+  let rendered: Awaited<ReturnType<typeof context.renderAsync>>;
+  try {
+    rendered = await context.renderAsync();
+  } finally {
+    context.release();
+  }
   let upright: { uri: string; width: number; height: number };
   try {
     upright = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
   } finally {
-    // Free the native bitmap now; a backfill runs hundreds of these back to back.
     rendered.release();
   }
   try {
