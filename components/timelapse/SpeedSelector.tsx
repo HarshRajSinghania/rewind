@@ -8,6 +8,8 @@ interface SpeedSelectorProps {
   selectedSpeed: number;
   onSelect: (speed: number) => void;
   style?: ViewStyle;
+  /** Extra control rendered at the end of the row (the align-faces toggle). */
+  trailing?: React.ReactNode;
 }
 
 const SPEEDS = [
@@ -17,7 +19,7 @@ const SPEEDS = [
   { label: '4x', value: 4 },
 ];
 
-function SpeedSelector({ selectedSpeed, onSelect, style }: SpeedSelectorProps) {
+function SpeedSelector({ selectedSpeed, onSelect, style, trailing }: SpeedSelectorProps) {
   const { fonts } = useFont();
   return (
     <View style={[styles.row, style]}>
@@ -35,6 +37,7 @@ function SpeedSelector({ selectedSpeed, onSelect, style }: SpeedSelectorProps) {
           </Pressable>
         );
       })}
+      {trailing}
     </View>
   );
 }

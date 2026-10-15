@@ -8,6 +8,10 @@ import TimelapsePlayer from '@/components/timelapse/TimelapsePlayer';
 import Scrubber from '@/components/timelapse/Scrubber';
 import Filmstrip from '@/components/timelapse/Filmstrip';
 import SpeedSelector from '@/components/timelapse/SpeedSelector';
+import AlignToggle from '@/components/timelapse/AlignToggle';
+import { useAppContext } from '@/context/AppContext';
+import { useFaceScanBackfill } from '@/hooks/useFaceScanBackfill';
+import { isFaceScanAvailable } from '@/utils/faceScan';
 import DateRangeSheet from '@/components/timelapse/DateRangeSheet';
 import { formatMMDD, useTimelapse } from '@/hooks/useTimelapse';
 
@@ -41,6 +45,12 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
     handleDateRangeApply,
   } = timelapse;
 
+  const { settings, updateSettings } = useAppContext();
+  // Hidden entirely when the native detector is missing (Expo Go / older dev client).
+  const scanAvailable = isFaceScanAvailable();
+  const align = scanAvailable && settings.alignFaces;
+  const scanProgress = useFaceScanBackfill(filteredPhotos, align);
+
   if (filteredPhotos.length < 2) return null;
 
   return (
@@ -71,6 +81,8 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
             ref={playerRef}
             photos={filteredPhotos}
             speed={speed}
+            align={align}
+            scanProgress={scanProgress.scanning ? scanProgress : null}
             onFrameChange={handleFrameChange}
             onPlaybackEnd={handlePlaybackEnd}
           />
@@ -91,7 +103,17 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
             onSelect={handleFilmstripSelect}
           />
         </View>
-        <SpeedSelector selectedSpeed={speed} onSelect={handleSpeedSelect} style={speedSelectorStyle} />
+        <SpeedSelector
+          selectedSpeed={speed}
+          onSelect={handleSpeedSelect}
+          style={speedSelectorStyle}
+          trailing={scanAvailable ? (
+            <AlignToggle
+              enabled={settings.alignFaces}
+              onToggle={(alignFaces) => updateSettings({ alignFaces })}
+            />
+          ) : null}
+        />
       </View>
 
       <DateRangeSheet
