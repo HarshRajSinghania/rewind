@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
+import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { Image } from 'expo-image';
 import { Play, Pause, SkipBack, SkipForward } from 'phosphor-react-native';
 import { haptics } from '@/utils/haptics';
@@ -11,6 +11,7 @@ function formatBadgeDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toLowerCase();
 }
 import { getImageSource } from '@/utils/imageSource';
+import { computeFaceTransform, medianEyeDistance, type Size } from '@/utils/faceAlign';
 import type { PhotoEntry } from '@/types';
 
 export interface TimelapsePlayerHandle {
@@ -21,15 +22,20 @@ export interface TimelapsePlayerHandle {
 interface TimelapsePlayerProps {
   photos: PhotoEntry[];
   speed: number;
+  /** Eye-lock each frame using its faceScan; frames without eyes play unaligned. */
+  align?: boolean;
+  /** Face-scan backfill progress; an "aligning n/m" badge shows while non-null. */
+  scanProgress?: { done: number; total: number } | null;
   onFrameChange?: (index: number) => void;
   onPlaybackEnd?: (index: number) => void;
 }
 
 const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
-  function TimelapsePlayer({ photos, speed, onFrameChange, onPlaybackEnd }, ref) {
+  function TimelapsePlayer({ photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd }, ref) {
     const { fonts } = useFont();
     const [frameIndex, setFrameIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [size, setSize] = useState<Size | null>(null);
     const frameRef = useRef(0);
     const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const speedRef = useRef(speed);
@@ -127,27 +133,67 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
       onPlaybackEndRef.current?.(next);
     }, [photos.length]);
 
+    const handleLayout = useCallback((e: LayoutChangeEvent) => {
+      const { width, height } = e.nativeEvent.layout;
+      setSize((prev) => (prev && prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+    }, []);
+
+    // One target eye distance per sequence, so the face is the same size in every frame.
+    const targetEyeDist = useMemo(
+      () => (align && size ? medianEyeDistance(photos.map((p) => p.faceScan), size) : null),
+      [align, size, photos],
+    );
+
     // Defensive clamp: guard against a render cycle before the useEffect fires.
     const safeIndex = photos.length > 0 ? Math.min(frameIndex, photos.length - 1) : 0;
     const current = photos[safeIndex];
+    const faceLayout = current?.faceScan && size && targetEyeDist
+      ? computeFaceTransform(current.faceScan, size, targetEyeDist)
+      : null;
 
     return (
       <View style={styles.wrapper}>
-        <View style={styles.screen}>
-          {current && (
+        <View style={styles.screen} onLayout={handleLayout} testID="timelapse-screen">
+          {current && (faceLayout ? (
+            <Image
+              source={getImageSource(current.imageUri)}
+              // Zoom is baked into width/height (not a scale transform) so expo-image
+              // decodes at on-screen size rather than the full-res photo.
+              style={{
+                position: 'absolute',
+                left: faceLayout.left,
+                top: faceLayout.top,
+                width: faceLayout.width,
+                height: faceLayout.height,
+                transformOrigin: faceLayout.transformOrigin,
+                transform: [{ rotate: `${faceLayout.rotation}rad` }],
+              }}
+              contentFit="fill"
+              // Hard cut: crossfading one <Image> would blend the old frame at the new transform.
+              transition={0}
+            />
+          ) : (
             <Image
               source={getImageSource(current.imageUri)}
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               transition={150}
             />
-          )}
+          ))}
 
           <View style={styles.badge}>
             <Text style={[styles.badgeText, { fontFamily: fonts.regular }]}>
               {current ? formatBadgeDate(current.date) : ''}
             </Text>
           </View>
+
+          {scanProgress && (
+            <View style={[styles.badge, styles.badgeRight]}>
+              <Text style={[styles.badgeText, { fontFamily: fonts.regular }]}>
+                {`aligning ${scanProgress.done}/${scanProgress.total}`}
+              </Text>
+            </View>
+          )}
 
           {/* Transport overlaid at bottom of image */}
           <View style={styles.transport}>
@@ -190,6 +236,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgPageTranslucent,
     paddingVertical: 6,
     paddingHorizontal: 12,
+  },
+  badgeRight: {
+    left: undefined,
+    right: 16,
   },
   badgeText: {
     fontFamily: Fonts.mono.regular,
