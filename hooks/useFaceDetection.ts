@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
 import type { Frame } from 'react-native-vision-camera';
 import type { FaceLandmarks } from '@/types';
@@ -89,15 +89,24 @@ export function useFaceDetection() {
     };
   }, []);
 
+  // Stable identity: consumers (Viewfinder's guide-off reset) use this as an effect
+  // dependency, and a fresh object per render loops them forever.
+  const sharedValues = useMemo(() => ({
+    faceX, faceY, faceWidth, faceHeight,
+    leftEyeX, leftEyeY, rightEyeX, rightEyeY,
+    noseX, noseY, rollAngle, yawAngle, hasFace,
+    mouthLeftX, mouthLeftY, mouthRightX, mouthRightY,
+  }), [
+    faceX, faceY, faceWidth, faceHeight,
+    leftEyeX, leftEyeY, rightEyeX, rightEyeY,
+    noseX, noseY, rollAngle, yawAngle, hasFace,
+    mouthLeftX, mouthLeftY, mouthRightX, mouthRightY,
+  ]);
+
   return {
     detectFaces,
     getCurrentLandmarks,
     isAvailable: FACE_DETECTION_AVAILABLE,
-    sharedValues: {
-      faceX, faceY, faceWidth, faceHeight,
-      leftEyeX, leftEyeY, rightEyeX, rightEyeY,
-      noseX, noseY, rollAngle, yawAngle, hasFace,
-      mouthLeftX, mouthLeftY, mouthRightX, mouthRightY,
-    },
+    sharedValues,
   };
 }
