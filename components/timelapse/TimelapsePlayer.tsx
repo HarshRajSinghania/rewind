@@ -12,6 +12,7 @@ function formatBadgeDate(dateStr: string): string {
 }
 import { getImageSource } from '@/utils/imageSource';
 import { computeFaceTransform, medianEyeDistance, type Size } from '@/utils/faceAlign';
+import { nextFrameDeadline } from '@/utils/playback';
 import type { PhotoEntry } from '@/types';
 
 export interface TimelapsePlayerHandle {
@@ -81,13 +82,17 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
       if (photos.length <= 1) return;
       setIsPlaying(true);
 
+      // Fixed deadlines, so each tick's render work doesn't stretch the frame interval.
+      let deadline = Date.now();
       const schedule = () => {
+        const now = Date.now();
+        deadline = nextFrameDeadline(deadline, now, 500 / speedRef.current);
         intervalRef.current = setTimeout(() => {
           frameRef.current = frameRef.current >= photos.length - 1 ? 0 : frameRef.current + 1;
           setFrameIndex(frameRef.current);
           onFrameChangeRef.current?.(frameRef.current);
           if (intervalRef.current !== null) schedule();
-        }, 500 / speedRef.current) as unknown as ReturnType<typeof setTimeout>;
+        }, deadline - now) as unknown as ReturnType<typeof setTimeout>;
       };
       schedule();
     }, [photos.length]);
@@ -148,16 +153,41 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
     const safeIndex = photos.length > 0 ? Math.min(frameIndex, photos.length - 1) : 0;
     const current = photos[safeIndex];
 
-    // Aligned playback double-buffers: the frame on screen stays (in its own layout)
-    // while the next one loads hidden in *its* layout, then they swap in one commit.
-    // A single <Image> would show the old face at the new transform during the decode,
-    // or blank (recyclingKey) — a flash on most 4x transitions on device.
-    const [shownId, setShownId] = useState<string | null>(null);
+    // Aligned playback buffers frames: each is mounted in its own layout and only shown
+    // once it has loaded, so the screen never blanks or puts the old face at the new
+    // transform (a single <Image> does one or the other). The next frame preloads hidden
+    // so its tick swaps in at once — at 4x a frame only lasts 125ms.
+    const [loadedIds, setLoadedIds] = useState<ReadonlySet<string>>(() => new Set());
+    const [lastShownId, setLastShownId] = useState<string | null>(null);
     const aligning = align && !!size && targetEyeDist != null;
-    const shown = (aligning && photos.find((p) => p.id === shownId)) || current;
-    const alignedFrames = aligning && current
-      ? (shown.id === current.id ? [current] : [shown, current])
+    const next = photos.length > 1 ? photos[(safeIndex + 1) % photos.length] : undefined;
+    const lastShown = photos.find((p) => p.id === lastShownId && loadedIds.has(p.id));
+    const shown = !current || loadedIds.has(current.id) ? current : (lastShown ?? current);
+    const bufferedFrames = aligning && current
+      ? [shown, current, next].filter(
+          (p, i, all): p is PhotoEntry => !!p && all.findIndex((q) => q?.id === p.id) === i,
+        )
       : [];
+    const bufferedKey = bufferedFrames.map((p) => p.id).join('|');
+    const bufferedIdsRef = useRef<ReadonlySet<string>>(new Set());
+    bufferedIdsRef.current = new Set(bufferedFrames.map((p) => p.id));
+
+    useEffect(() => {
+      if (shown && shown.id !== lastShownId) setLastShownId(shown.id);
+    }, [shown?.id, lastShownId]);
+
+    // Forget loads of frames that left the buffer: a remounted view must decode again.
+    useEffect(() => {
+      setLoadedIds((prev) => {
+        const kept = [...prev].filter((id) => bufferedIdsRef.current.has(id));
+        return kept.length === prev.size ? prev : new Set(kept);
+      });
+    }, [bufferedKey]);
+
+    const markLoaded = useCallback((id: string) => {
+      if (!bufferedIdsRef.current.has(id)) return; // late event from an unmounted frame
+      setLoadedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    }, []);
 
     function frameProps(photo: PhotoEntry) {
       const layout = photo.faceScan && size && targetEyeDist
@@ -185,22 +215,19 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
       <View style={styles.wrapper}>
         <View style={styles.screen} onLayout={handleLayout} testID="timelapse-screen">
           {aligning ? (
-            alignedFrames.map((photo) => {
+            bufferedFrames.map((photo) => {
               const { style, contentFit } = frameProps(photo);
-              const pending = photo.id !== shown.id;
-              // Every load marks its frame as shown — the first frame too, so the next
-              // seek has a frame to hold on screen.
-              const reveal = () => setShownId(photo.id);
+              const loaded = () => markLoaded(photo.id);
               return (
                 <Image
                   key={photo.id}
                   source={getImageSource(photo.imageUri)}
-                  style={[style, pending && styles.pendingFrame]}
+                  style={[style, photo.id !== shown.id && styles.pendingFrame]}
                   contentFit={contentFit}
                   transition={0}
-                  // Swap on error too, so one broken file can't freeze playback.
-                  onLoad={reveal}
-                  onError={reveal}
+                  // Count an error as loaded too, so one broken file can't freeze playback.
+                  onLoad={loaded}
+                  onError={loaded}
                 />
               );
             })

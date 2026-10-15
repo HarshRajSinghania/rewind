@@ -72,7 +72,7 @@ function frames() {
 }
 
 /** The single frame actually on screen. */
-function frame(): FrameProps {
+function frame(): FrameProps & { uri: string } {
   const shown = frames().filter((f) => f.visible);
   expect(shown).toHaveLength(1);
   return shown[0];
@@ -111,8 +111,39 @@ describe('TimelapsePlayer alignment', () => {
     expect((next as { recyclingKey?: string }).recyclingKey).toBeUndefined();
 
     await fireEvent(next.el, 'load');
-    expect(frames().map((f) => f.uri)).toEqual([uriOf(PHOTOS[1])]);
+    expect(frame().uri).toBe(uriOf(PHOTOS[1]));
     expect(frame().style.position).toBe('absolute');
+    expect(frames().map((f) => f.uri)).not.toContain(uriOf(PHOTOS[0]));
+  });
+
+  it('preloads the next frame hidden so its turn swaps in at once', async () => {
+    // At 4x a frame lasts 125ms; loading only when its turn comes (then waiting for
+    // onLoad to round-trip through JS) misses that budget on device.
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, ref });
+    await fireEvent(frames()[0].el, 'load');
+
+    const preload = frames().find((f) => f.uri === uriOf(PHOTOS[1]))!;
+    expect(preload.visible).toBe(false);
+    await fireEvent(preload.el, 'load');
+
+    await act(async () => { ref.current!.seekTo(1); });
+    expect(frame().uri).toBe(uriOf(PHOTOS[1])); // no wait for a fresh load
+    expect(frames().find((f) => f.uri === uriOf(PHOTOS[2]))?.visible).toBe(false); // next one queued
+  });
+
+  it('makes a frame that left the buffer load again before it is shown', async () => {
+    // A remounted view starts blank; trusting its earlier load would flash.
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, ref });
+    await fireEvent(frames()[0].el, 'load');
+    await fireEvent(frames().find((f) => f.uri === uriOf(PHOTOS[1]))!.el, 'load');
+
+    await act(async () => { ref.current!.seekTo(2); }); // photo 1 drops out of the buffer
+    expect(frames().map((f) => f.uri)).not.toContain(uriOf(PHOTOS[1]));
+    await act(async () => { ref.current!.seekTo(1); }); // ...and comes back
+    expect(frame().uri).toBe(uriOf(PHOTOS[0]));
+    expect(frames().find((f) => f.uri === uriOf(PHOTOS[1]))?.visible).toBe(false);
   });
 
   it('swaps on a load error too, so a broken file cannot freeze playback', async () => {
@@ -120,9 +151,9 @@ describe('TimelapsePlayer alignment', () => {
     await renderPlayer({ align: true, ref });
     await fireEvent(frames()[0].el, 'load');
     await act(async () => { ref.current!.seekTo(1); });
-    expect(frames()).toHaveLength(2);
+    expect(frame().uri).toBe(uriOf(PHOTOS[0]));
     await fireEvent(frames().find((f) => f.uri === uriOf(PHOTOS[1]))!.el, 'error');
-    expect(frames().map((f) => f.uri)).toEqual([uriOf(PHOTOS[1])]);
+    expect(frame().uri).toBe(uriOf(PHOTOS[1]));
   });
 
   it('plays as before when alignment is off', async () => {
