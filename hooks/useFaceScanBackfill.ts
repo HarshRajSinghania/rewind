@@ -73,12 +73,15 @@ export function useFaceScanBackfill(photos: PhotoEntry[], enabled: boolean): Fac
         }
       } finally {
         flush();
-        setProgress(IDLE);
+        // A cancelled loop already reset progress in cleanup; resetting again here
+        // would wipe the progress of a loop that has started since.
+        if (!cancelled) setProgress(IDLE);
       }
     })();
 
     return () => {
       cancelled = true;
+      setProgress(IDLE);
     };
   }, [hasWork, updatePhotos]);
 

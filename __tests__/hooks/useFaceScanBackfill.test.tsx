@@ -161,6 +161,31 @@ describe('useFaceScanBackfill', () => {
     expect(scannedUris()).toEqual(photos.map((p) => p.imageUri));
   });
 
+  it('keeps showing progress when toggled off and on mid-scan', async () => {
+    // Off->on while photo 0 is in flight starts a second loop; when the first loop
+    // finally exits it must not wipe the live loop's progress.
+    const first = deferred<FaceScan>();
+    const second = deferred<FaceScan>();
+    scan.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue(SCANNED);
+    const photos = [makePhoto(0), makePhoto(1), makePhoto(2)];
+
+    const { result, rerender } = await renderHook(
+      (p: { enabled: boolean }) => useFaceScanBackfill(photos, p.enabled),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => expect(scan).toHaveBeenCalledTimes(1));
+    await rerender({ enabled: false });
+    expect(result.current).toEqual(IDLE); // no badge while alignment is off
+    await rerender({ enabled: true });
+    await waitFor(() => expect(scan).toHaveBeenCalledTimes(2)); // new loop on photo 1
+
+    await act(async () => { first.resolve(SCANNED); }); // old loop exits
+    expect(result.current.scanning).toBe(true);
+
+    await act(async () => { second.resolve(SCANNED); });
+    await waitFor(() => expect(result.current).toEqual(IDLE));
+  });
+
   it('follows a narrowed date range mid-scan', async () => {
     const first = deferred<FaceScan>();
     scan.mockReturnValueOnce(first.promise).mockResolvedValue(SCANNED);
