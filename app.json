@@ -77,12 +77,6 @@
         }
       ],
       [
-        "expo-camera",
-        {
-          "cameraPermission": "Rewind needs camera access to capture your daily photos."
-        }
-      ],
-      [
         "expo-image-picker",
         {
           "photosPermission": "Rewind needs photo library access to set your profile avatar."
