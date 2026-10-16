@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import { useSharedValue, useFrameCallback } from 'react-native-reanimated';
+import { useSharedValue, useFrameCallback, useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { Play, Pause, SkipBack, SkipForward } from 'phosphor-react-native';
 import { haptics } from '@/utils/haptics';
 import { Colors, Fonts } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
 import PlayerFrame, { type FrameLayout } from '@/components/timelapse/PlayerFrame';
+import AnimatedText from '@/components/ui/AnimatedText';
 import { computeFaceTransform, medianEyeDistance, type Size } from '@/utils/faceAlign';
 import { frameInterval, playbackStep, ringWindow, RING_SIZE } from '@/utils/playback';
 import type { PhotoEntry } from '@/types';
@@ -34,6 +35,8 @@ interface TimelapsePlayerProps {
   onFrameChange?: (index: number) => void;
   onPlaybackEnd?: (index: number) => void;
   onPlayingChange?: (playing: boolean) => void;
+  /** Frame on screen, shared with the scrubber/filmstrip so they match it exactly. */
+  shownFrame?: SharedValue<number>;
 }
 
 /**
@@ -44,7 +47,7 @@ interface TimelapsePlayerProps {
  */
 const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
   function TimelapsePlayer(
-    { photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd, onPlayingChange },
+    { photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd, onPlayingChange, shownFrame },
     ref,
   ) {
     const { fonts } = useFont();
@@ -59,17 +62,31 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
     callbacks.current = { onFrameChange, onPlaybackEnd, onPlayingChange };
 
     const frame = useSharedValue(0);
-    const shown = useSharedValue(0);
+    const ownShown = useSharedValue(0);
+    const shown = shownFrame ?? ownShown;
     const dueAt = useSharedValue(0);
     const lastReport = useSharedValue(0);
     const interval = useSharedValue(frameInterval(speed));
     const ids = useSharedValue<string[]>(photos.map((p) => p.id));
     const loaded = useSharedValue<Record<string, true>>({});
+    // JS-side source of truth. A JS write to a shared value lands on the UI thread
+    // asynchronously while a JS read returns the UI copy, so read-modify-write from JS
+    // loses updates (two quick loads dropped one, and playback stalled waiting for it).
+    // JS keeps its own copies here and only ever writes the shared values.
+    const loadedRef = useRef<Record<string, true>>({});
+    const posRef = useRef({ frame: 0, shown: 0 });
+    const isPlayingRef = useRef(false);
 
     useEffect(() => { interval.value = frameInterval(speed); }, [speed, interval]);
     useEffect(() => { ids.value = photos.map((p) => p.id); }, [photos, ids]);
 
+    // The date label follows the frame on screen on the UI thread, like the image.
+    const labels = useSharedValue<string[]>(photos.map((p) => formatBadgeDate(p.date)));
+    useEffect(() => { labels.value = photos.map((p) => formatBadgeDate(p.date)); }, [photos, labels]);
+    const dateText = useDerivedValue(() => labels.value[shown.value] ?? '');
+
     const report = useCallback((f: number, s: number) => {
+      posRef.current = { frame: f, shown: s };
       setView((prev) => (prev.frame === f && prev.shown === s ? prev : { frame: f, shown: s }));
       callbacks.current.onFrameChange?.(f);
     }, []);
@@ -96,6 +113,7 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
     clockRef.current = clock;
 
     const setPlaying = useCallback((playing: boolean) => {
+      isPlayingRef.current = playing;
       clockRef.current.setActive(playing);
       setIsPlaying(playing);
       callbacks.current.onPlayingChange?.(playing);
@@ -109,19 +127,26 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
     }, [dueAt, lastReport, setPlaying]);
 
     const pause = useCallback((notifyEnd: boolean) => {
+      const wasPlaying = isPlayingRef.current;
       setPlaying(false);
-      setView({ frame: frame.value, shown: shown.value });
-      if (notifyEnd) callbacks.current.onPlaybackEnd?.(frame.value);
+      // While playing the UI clock owns the playhead (no JS write pending), so reading it
+      // back is safe; while paused, JS's own copy is the truth.
+      const pos = wasPlaying ? { frame: frame.value, shown: shown.value } : posRef.current;
+      posRef.current = pos;
+      setView(pos);
+      if (notifyEnd) callbacks.current.onPlaybackEnd?.(pos.frame);
     }, [frame, shown, setPlaying]);
 
     // Seek: move the playhead now; keep showing the old frame until the target decodes.
     const seek = useCallback((index: number) => {
-      setPlaying(false);
+      if (isPlayingRef.current) pause(false);
       frame.value = index;
       const id = photosRef.current[index]?.id;
-      if (id && loaded.value[id]) shown.value = index;
-      setView({ frame: index, shown: shown.value });
-    }, [frame, shown, loaded, setPlaying]);
+      const nextShown = id && loadedRef.current[id] ? index : posRef.current.shown;
+      shown.value = nextShown;
+      posRef.current = { frame: index, shown: nextShown };
+      setView(posRef.current);
+    }, [frame, shown, pause]);
 
     useImperativeHandle(ref, () => ({ seekTo: seek, pause: () => pause(false) }), [seek, pause]);
 
@@ -135,18 +160,23 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
 
     const markLoaded = useCallback((id: string) => {
       if (!ringIdsRef.current.has(id)) return; // late event from an unmounted frame
-      if (!loaded.value[id]) loaded.value = { ...loaded.value, [id]: true };
-      const f = frame.value;
-      if (photosRef.current[f]?.id === id && shown.value !== f) {
-        shown.value = f; // paused on a frame that just finished decoding
-        setView({ frame: f, shown: f });
+      if (!loadedRef.current[id]) {
+        loadedRef.current = { ...loadedRef.current, [id]: true };
+        loaded.value = loadedRef.current;
       }
-    }, [frame, shown, loaded]);
+      const { frame: f, shown: s } = posRef.current;
+      if (!isPlayingRef.current && photosRef.current[f]?.id === id && s !== f) {
+        shown.value = f; // paused on a frame that just finished decoding
+        posRef.current = { frame: f, shown: f };
+        setView(posRef.current);
+      }
+    }, [shown, loaded]);
 
     const forget = useCallback((id: string) => {
-      if (!loaded.value[id]) return;
-      const next = { ...loaded.value };
+      if (!loadedRef.current[id]) return;
+      const next = { ...loadedRef.current };
       delete next[id];
+      loadedRef.current = next;
       loaded.value = next;
     }, [loaded]);
 
@@ -154,7 +184,7 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
     // against the old set.
     useEffect(() => {
       if (photos.length === 0) return;
-      if (frame.value >= photos.length) seek(photos.length - 1);
+      if (posRef.current.frame >= photos.length) seek(photos.length - 1);
       pause(true);
     }, [photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -223,9 +253,12 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
           ))}
 
           <View style={styles.badge}>
-            <Text style={[styles.badgeText, { fontFamily: fonts.regular }]}>
-              {current ? formatBadgeDate(current.date) : ''}
-            </Text>
+            <AnimatedText
+              testID="player-date"
+              text={dateText}
+              initial={current ? formatBadgeDate(current.date) : ''}
+              style={[styles.badgeText, { fontFamily: fonts.regular }]}
+            />
           </View>
 
           {scanProgress && (

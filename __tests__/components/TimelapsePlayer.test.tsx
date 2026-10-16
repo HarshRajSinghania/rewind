@@ -157,6 +157,22 @@ describe('TimelapsePlayer', () => {
     expect(onFrameChange).toHaveBeenLastCalledWith(1);
   });
 
+  it('keeps frames marked loaded when their loads land back to back', async () => {
+    // On device, JS writes to a shared value land on the UI thread asynchronously while
+    // JS reads see the UI copy: read-modify-write from JS lost the first of two quick
+    // loads, and playback stalled forever waiting for that frame.
+    await renderPlayer({ align: true });
+    await load(THREE[0]);
+    await load(THREE[1]); // no render between these two loads,
+    await load(THREE[2]); // so the UI copy is still behind
+    await fireEvent.press(screen.getByLabelText('Play'));
+    const clock = frameClocks[frameClocks.length - 1];
+    await act(async () => { clock.tick({ timestamp: 1000 }); });
+    await act(async () => { clock.tick({ timestamp: 1500 }); });
+    await act(async () => { clock.tick({ timestamp: 1600 }); });
+    expect(shown().uri).toBe(uri(THREE[1]));
+  });
+
   it('holds the frame while the next one is still loading', async () => {
     await renderPlayer({ align: true });
     await load(THREE[0]);
@@ -176,6 +192,27 @@ describe('TimelapsePlayer', () => {
     expect(frameClocks[frameClocks.length - 1].active).toBe(false);
     expect(onPlayingChange).toHaveBeenLastCalledWith(false);
     expect(onPlaybackEnd).toHaveBeenLastCalledWith(0);
+  });
+
+  it('labels the date of the frame actually on screen', async () => {
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, ref });
+    expect(screen.getByTestId('player-date').props.text).toBe('mar 1, 2026');
+    await load(THREE[0]);
+    await act(async () => { ref.current!.seekTo(1); }); // not decoded yet: still showing frame 0
+    expect(screen.getByTestId('player-date').props.text).toBe('mar 1, 2026');
+    await load(THREE[1]);
+    expect(screen.getByTestId('player-date').props.text).toBe('mar 2, 2026');
+  });
+
+  it('drives a shared on-screen frame value when given one', async () => {
+    const shownFrame = { value: 0 };
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, ref, shownFrame: shownFrame as never });
+    await load(THREE[0]);
+    await load(THREE[1]);
+    await act(async () => { ref.current!.seekTo(1); });
+    expect(shownFrame.value).toBe(1);
   });
 
   it('shows the aligning badge only while progress is given', async () => {
