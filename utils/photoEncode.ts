@@ -7,6 +7,7 @@
  */
 import { File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import type { PhotoEntry } from '@/types';
 
 export const PHOTO_ENCODING = 'q95' as const;
 const QUALITY = 0.95;
@@ -37,4 +38,9 @@ export async function encodePhoto(srcUri: string, name: string): Promise<string>
 export function encodedName(uri: string): string {
   const base = (uri.split('/').pop() ?? 'photo').replace(/\.jpe?g$/i, '');
   return `${base}_q95.jpg`;
+}
+
+/** A local photo file not yet stored as q95. */
+export function needsEncoding(photo: Pick<PhotoEntry, 'imageUri' | 'encoding'>): boolean {
+  return photo.encoding !== PHOTO_ENCODING && photo.imageUri.startsWith('file://');
 }

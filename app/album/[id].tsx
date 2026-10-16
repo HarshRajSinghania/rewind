@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -20,6 +20,12 @@ import { useStreak } from '@/hooks/useStreak';
 import { useAppContext } from '@/context/AppContext';
 import { useAlbumLock } from '@/hooks/useAlbumLock';
 import { usePhotoEncodeBackfill } from '@/hooks/usePhotoEncodeBackfill';
+import { useFaceScanBackfill } from '@/hooks/useFaceScanBackfill';
+import { isFaceScanAvailable } from '@/utils/faceScan';
+import { needsEncoding } from '@/utils/photoEncode';
+import { buildFaceTrend, photoReadout } from '@/utils/faceTrend';
+import FaceTrendCard from '@/components/face/FaceTrendCard';
+import type { PhotoEntry } from '@/types';
 import { haptics } from '@/utils/haptics';
 import { pickPhotosFromLibrary } from '@/utils/import';
 import ImportSheet, { ImportSource } from '@/components/ui/ImportSheet';
@@ -46,6 +52,12 @@ export default function AlbumDetailScreen() {
   // Store photos as q95 (fresh captures and imports land here right after saving). Only
   // while this screen is in front, so playback and the camera get the CPU.
   usePhotoEncodeBackfill(photos, focused && !locked);
+  // Face measurements for the trend card. Waits for the q95 pass: a scan reading a file the
+  // encoder has just replaced would fail for this session.
+  const faceAvailable = isFaceScanAvailable();
+  const encodePending = photos.some(needsEncoding);
+  const faceProgress = useFaceScanBackfill(photos, faceAvailable && focused && !locked && !encodePending);
+  const faceTrend = useMemo(() => (faceAvailable ? buildFaceTrend(photos) : null), [faceAvailable, photos]);
   const [showPinModal, setShowPinModal] = useState(false);
 
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -119,6 +131,17 @@ export default function AlbumDetailScreen() {
 
   function handleDayPress(date: string) {
     const index = monthPhotos.findIndex(p => p.date === date);
+    if (index >= 0) {
+      setSelectedPhotoIndex(index);
+      setModalVisible(true);
+    }
+  }
+
+  /** Opens the photo on `date` from anywhere (the face chart), switching to its month. */
+  function openPhotoOnDate(date: string) {
+    const [year, month] = date.split('-').map(Number);
+    setCurrentMonth({ year, month });
+    const index = getPhotosByMonth(year, month).findIndex(p => p.date === date);
     if (index >= 0) {
       setSelectedPhotoIndex(index);
       setModalVisible(true);
@@ -298,6 +321,14 @@ export default function AlbumDetailScreen() {
               tap any day to backfill a photo
             </Text>
           )}
+          {faceAvailable && photos.length > 0 ? (
+            <FaceTrendCard
+              photos={photos}
+              progress={faceProgress}
+              onSelectDate={openPhotoOnDate}
+              onCompare={() => router.push({ pathname: '/album/compare', params: { albumId: id } })}
+            />
+          ) : null}
         </ScrollView>
       )}
 
@@ -334,6 +365,7 @@ export default function AlbumDetailScreen() {
         onDelete={(id) => { deletePhoto(id); if (monthPhotos.length <= 1) setModalVisible(false); }}
         onUpdateCaption={(id, caption) => updatePhoto(id, { caption })}
         onRetake={handleRetake}
+        readout={faceAvailable ? (p: PhotoEntry) => photoReadout(faceTrend, p) : undefined}
       />
 
       <ImportSheet

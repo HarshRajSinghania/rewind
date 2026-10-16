@@ -1,5 +1,5 @@
 import { ImageManipulator } from 'expo-image-manipulator';
-import { encodePhoto, encodedName, PHOTO_ENCODING } from '@/utils/photoEncode';
+import { encodePhoto, encodedName, needsEncoding, PHOTO_ENCODING } from '@/utils/photoEncode';
 import { fileStore, resetFileSystemMock } from '../helpers/fileSystemMock';
 
 jest.mock('expo-file-system', () => require('../helpers/fileSystemMock').expoFileSystemMock);
@@ -56,5 +56,14 @@ describe('encodedName', () => {
   it('names the q95 copy after the original', () => {
     expect(encodedName('file:///document/rewind_import_17_3_2025-04-23.jpg')).toBe('rewind_import_17_3_2025-04-23_q95.jpg');
     expect(PHOTO_ENCODING).toBe('q95');
+  });
+});
+
+describe('needsEncoding', () => {
+  const base = { id: 'p', albumId: 'a', date: '2026-01-01', caption: '', capturedAt: '', cameraDirection: 'front' as const };
+  it('is true only for local photos not yet stored as q95', () => {
+    expect(needsEncoding({ ...base, imageUri: 'file:///document/a.jpg' })).toBe(true);
+    expect(needsEncoding({ ...base, imageUri: 'file:///document/a_q95.jpg', encoding: 'q95' })).toBe(false);
+    expect(needsEncoding({ ...base, imageUri: 'https://example.com/a.jpg' })).toBe(false);
   });
 });

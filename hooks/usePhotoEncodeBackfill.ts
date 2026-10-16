@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { File } from 'expo-file-system';
 import { useAppContext } from '@/context/AppContext';
-import { encodePhoto, encodedName, PHOTO_ENCODING } from '@/utils/photoEncode';
+import { encodePhoto, encodedName, needsEncoding, PHOTO_ENCODING } from '@/utils/photoEncode';
 import type { PhotoEntry } from '@/types';
 
 export const ENCODE_FLUSH_EVERY = 5;
@@ -15,7 +15,7 @@ export interface PhotoEncodeProgress {
 const IDLE: PhotoEncodeProgress = { encoding: false, done: 0, total: 0 };
 
 function pendingEncodes(photos: PhotoEntry[], attempted: Set<string>): PhotoEntry[] {
-  return photos.filter((p) => p.encoding !== PHOTO_ENCODING && p.imageUri.startsWith('file://') && !attempted.has(p.id));
+  return photos.filter((p) => needsEncoding(p) && !attempted.has(p.id));
 }
 
 function deleteQuietly(uri: string) {

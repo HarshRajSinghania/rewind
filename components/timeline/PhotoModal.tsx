@@ -40,6 +40,8 @@ interface PhotoModalProps {
   onDelete: (id: string) => void;
   onUpdateCaption: (id: string, caption: string) => void;
   onRetake?: (albumId: string) => void;
+  /** One line about the photo's face measurement, or null. */
+  readout?: (photo: PhotoEntry) => string | null;
 }
 
 // ─── ZoomableImage ────────────────────────────────────────────────────────────
@@ -140,6 +142,7 @@ export default function PhotoModal({
   onDelete,
   onUpdateCaption,
   onRetake,
+  readout,
 }: PhotoModalProps) {
   const { fonts, typography } = useFont();
   const insets = useSafeAreaInsets();
@@ -168,6 +171,7 @@ export default function PhotoModal({
   }, [initialIndex, photos.length]);
 
   const currentPhoto = photos[currentIndex] ?? null;
+  const currentReadout = currentPhoto && readout ? readout(currentPhoto) : null;
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -308,6 +312,9 @@ export default function PhotoModal({
                   {'  ·  DAY '}
                   {getDayNumber(joinDate, currentPhoto.date)}
                 </Text>
+                {currentReadout ? (
+                  <Text style={[typography.small, styles.readout]}>{currentReadout}</Text>
+                ) : null}
 
                 {editingCaption ? (
                   <View style={styles.captionEditRow}>
@@ -413,6 +420,10 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     alignItems: 'center',
     gap: 8,
+  },
+  readout: {
+    color: Colors.textTertiary,
+    textAlign: 'center',
   },
   dateRow: {
     color: Colors.textSecondary,
