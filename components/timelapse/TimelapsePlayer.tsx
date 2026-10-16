@@ -35,8 +35,13 @@ interface TimelapsePlayerProps {
   onFrameChange?: (index: number) => void;
   onPlaybackEnd?: (index: number) => void;
   onPlayingChange?: (playing: boolean) => void;
-  /** Frame on screen, shared with the scrubber/filmstrip so they match it exactly. */
+  /** Frame on screen, shared with the filmstrip so it matches the picture exactly. */
   shownFrame?: SharedValue<number>;
+  /**
+   * The playhead, shared with the scrubber. It moves at once on a seek, while the picture
+   * waits for the target to decode — so a released scrubber thumb stays where it was let go.
+   */
+  playheadFrame?: SharedValue<number>;
   /**
    * The scrubber is being dragged: decode only the frame under the finger. A full ring per
    * seek queued ~20 decodes ahead of the one the user is looking at.
@@ -52,7 +57,7 @@ interface TimelapsePlayerProps {
  */
 const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
   function TimelapsePlayer(
-    { photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd, onPlayingChange, shownFrame, scrubbing = false },
+    { photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd, onPlayingChange, shownFrame, playheadFrame, scrubbing = false },
     ref,
   ) {
     const { fonts } = useFont();
@@ -66,7 +71,8 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
     const callbacks = useRef({ onFrameChange, onPlaybackEnd, onPlayingChange });
     callbacks.current = { onFrameChange, onPlaybackEnd, onPlayingChange };
 
-    const frame = useSharedValue(0);
+    const ownFrame = useSharedValue(0);
+    const frame = playheadFrame ?? ownFrame;
     const ownShown = useSharedValue(0);
     const shown = shownFrame ?? ownShown;
     const dueAt = useSharedValue(0);

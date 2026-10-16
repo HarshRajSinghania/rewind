@@ -141,3 +141,15 @@ describe('TimelapseView face graph', () => {
     expect(mockFaceGraph).not.toHaveBeenCalled();
   });
 });
+
+describe('TimelapseView playhead wiring', () => {
+  it('drives the scrubber from the playhead and the filmstrip from the frame on screen', async () => {
+    await renderView();
+    const player = mockPlayer.mock.calls.at(-1)?.[0] as { playheadFrame: unknown; shownFrame: unknown };
+    const scrubber = mockScrubber.mock.calls.at(-1)?.[0] as { frame: unknown };
+    const filmstrip = mockFilmstrip.mock.calls.at(-1)?.[0] as { frame: unknown };
+    expect(player.playheadFrame).toBeDefined();
+    expect(scrubber.frame).toBe(player.playheadFrame);
+    expect(filmstrip.frame).toBe(player.shownFrame);
+  });
+});

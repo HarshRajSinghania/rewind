@@ -136,6 +136,18 @@ describe('TimelapsePlayer', () => {
     expect(shown().uri).toBe(uri(THREE[1]));
   });
 
+  it('moves the shared playhead at once on a seek, while the picture waits for the decode', async () => {
+    // The scrubber follows the playhead: following the shown frame snapped the thumb back
+    // to the old frame on release until the target had decoded.
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    const playhead = { value: 0 };
+    const shownFrame = { value: 0 };
+    await renderPlayer({ align: true, photos: FORTY, ref, playheadFrame: playhead as never, shownFrame: shownFrame as never });
+    await act(async () => { ref.current!.seekTo(20); });
+    expect(playhead.value).toBe(20);
+    expect(shownFrame.value).toBe(0);
+  });
+
   it('while scrubbing, decodes only the frame on screen and the one under the finger', async () => {
     const ref = React.createRef<TimelapsePlayerHandle>();
     await renderPlayer({ align: true, photos: FORTY, ref, scrubbing: true });

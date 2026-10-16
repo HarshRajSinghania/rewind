@@ -54,6 +54,8 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
   // Frame on screen, written by the player on the UI thread and read by the scrubber
   // and filmstrip, so the controls match the picture exactly at any speed.
   const shownFrame = useSharedValue(0);
+  // The playhead moves at once on a seek; the scrubber follows it so a released thumb stays put.
+  const playhead = useSharedValue(0);
   const [scrubbing, setScrubbing] = useState(false);
   const { settings, updateSettings } = useAppContext();
   // Hidden entirely when the native detector is missing (Expo Go / older dev client).
@@ -99,6 +101,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
             onPlaybackEnd={handlePlaybackEnd}
             onPlayingChange={handlePlayingChange}
             shownFrame={shownFrame}
+            playheadFrame={playhead}
             scrubbing={scrubbing}
           />
         </View>
@@ -112,7 +115,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
             endDate={filteredPhotos[filteredPhotos.length - 1].date}
             onSeek={handleSeek}
             onScrubChange={setScrubbing}
-            frame={shownFrame}
+            frame={playhead}
           />
           {scanAvailable ? <FaceGraph trendPhotos={albumPhotos} framePhotos={filteredPhotos} frame={shownFrame} /> : null}
           <Filmstrip
