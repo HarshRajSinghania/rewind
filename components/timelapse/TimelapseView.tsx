@@ -8,6 +8,7 @@ import { haptics } from '@/utils/haptics';
 import TimelapsePlayer from '@/components/timelapse/TimelapsePlayer';
 import Scrubber from '@/components/timelapse/Scrubber';
 import Filmstrip from '@/components/timelapse/Filmstrip';
+import FaceGraph from '@/components/timelapse/FaceGraph';
 import SpeedSelector from '@/components/timelapse/SpeedSelector';
 import AlignToggle from '@/components/timelapse/AlignToggle';
 import { useAppContext } from '@/context/AppContext';
@@ -28,6 +29,7 @@ interface TimelapseViewProps {
 export default function TimelapseView({ header, timelapse, speedSelectorStyle }: TimelapseViewProps) {
   const { fonts } = useFont();
   const {
+    albumPhotos,
     playerRef,
     speed,
     displayIndex,
@@ -112,6 +114,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
             onScrubChange={setScrubbing}
             frame={shownFrame}
           />
+          {scanAvailable ? <FaceGraph trendPhotos={albumPhotos} framePhotos={filteredPhotos} frame={shownFrame} /> : null}
           <Filmstrip
             photos={filteredPhotos}
             currentIndex={filmstripIndex}

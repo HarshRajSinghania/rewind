@@ -28,6 +28,8 @@ jest.mock('react-native-reanimated', () => require('../helpers/reanimatedMock').
 const mockFilmstrip = jest.fn();
 jest.mock('@/components/timelapse/Filmstrip', () => (props: unknown) => { mockFilmstrip(props); return null; });
 jest.mock('@/components/timelapse/DateRangeSheet', () => () => null);
+const mockFaceGraph = jest.fn();
+jest.mock('@/components/timelapse/FaceGraph', () => (props: unknown) => { mockFaceGraph(props); return null; });
 jest.mock('phosphor-react-native', () => ({ CalendarBlank: () => null, Camera: () => null, UserFocus: () => null }));
 
 function photo(date: string): PhotoEntry {
@@ -38,10 +40,11 @@ function photo(date: string): PhotoEntry {
 }
 
 const PHOTOS = [photo('2026-03-08'), photo('2026-03-09')];
+const ALBUM = [photo('2026-03-07'), ...PHOTOS];
 
 function timelapse(over: { isPlaying?: boolean; filmstripIndex?: number } = {}): ReturnType<typeof useTimelapse> {
   return {
-    playerRef: { current: null }, speed: 1, displayIndex: 0, filteredPhotos: PHOTOS,
+    playerRef: { current: null }, speed: 1, displayIndex: 0, filteredPhotos: PHOTOS, albumPhotos: ALBUM,
     isPlaying: over.isPlaying ?? false, filmstripIndex: over.filmstripIndex ?? 0, handlePlayingChange: jest.fn(),
     allDates: PHOTOS.map((p) => p.date), rangeStart: PHOTOS[0].date, rangeEnd: PHOTOS[1].date,
     hasDateFilter: false, showDateRange: false, setShowDateRange: jest.fn(),
@@ -120,5 +123,21 @@ describe('TimelapseView face alignment wiring', () => {
     mockBackfill.mockReturnValue({ scanning: false, done: 0, total: 0 });
     await renderView();
     expect(lastPlayerProps().scanProgress).toBeNull();
+  });
+});
+
+describe('TimelapseView face graph', () => {
+  it('fits the trend on the whole album and plots the frames being played', async () => {
+    await renderView();
+    const props = mockFaceGraph.mock.calls.at(-1)?.[0] as { trendPhotos: unknown; framePhotos: unknown; frame: unknown };
+    expect(props.trendPhotos).toBe(ALBUM);
+    expect(props.framePhotos).toBe(PHOTOS);
+    expect(props.frame).toBeDefined();
+  });
+
+  it('has no graph without the face scanner', async () => {
+    mockAvailable = false;
+    await renderView();
+    expect(mockFaceGraph).not.toHaveBeenCalled();
   });
 });

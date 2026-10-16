@@ -93,6 +93,8 @@ export function useTimelapse({ photos }: UseTimelapseOptions) {
   }
 
   return {
+    /** Every photo in the album, before the date-range filter (the face trend is fitted on these). */
+    albumPhotos: photos,
     playerRef,
     speed,
     displayIndex,
