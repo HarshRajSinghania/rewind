@@ -55,8 +55,9 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
 
   return (
     <>
+      {/* Outside the padded body: the header carries its own padding, like other screens'. */}
+      {header}
       <View style={styles.container}>
-        {header}
 
         {/* Date range row */}
         <Pressable
