@@ -8,7 +8,7 @@ import PhotoImage from '@/components/ui/PhotoImage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Plus, CaretRight, Camera, GearSix, LockSimple, PencilSimple, Trash } from 'phosphor-react-native';
-import { Colors, Fonts, Sizes, Typography } from '@/constants/theme';
+import { Colors, Fonts, Sizes } from '@/constants/theme';
 import { useAppContext } from '@/context/AppContext';
 import { useFont } from '@/context/FontContext';
 import { usePhotos } from '@/hooks/usePhotos';
@@ -77,7 +77,7 @@ function HeroCard({
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.heroEmpty]}>
           <Camera size={36} color={Colors.textTertiary} weight="light" />
-          <Text style={[styles.heroEmptyText, { fontFamily: fonts.regular }]}>take today's photo</Text>
+          <Text style={[styles.heroEmptyText, { fontFamily: fonts.regular }]}>{"take today's photo"}</Text>
         </View>
       )}
 

@@ -133,7 +133,6 @@ export default function MonthPicker({
   maxYear,
   maxMonth,
 }: MonthPickerProps) {
-  const { fonts } = useFont();
 
   const effectiveMaxYear = maxYear ?? new Date().getFullYear();
   const PADDING_YEARS = 10;

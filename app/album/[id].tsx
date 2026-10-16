@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useIsFocused, Stack } from 'expo-router';
 import { CaretLeft, Camera, Play, GearSix, LockSimple } from 'phosphor-react-native';
 import Animated, {
@@ -39,7 +38,7 @@ export default function AlbumDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { photos, getPhotosByMonth } = usePhotos(id);
-  const { profile, albums, addPhoto, updatePhoto, deletePhoto, updateProfile, updateAlbum, deleteAlbum } = useAppContext();
+  const { profile, albums, addPhoto, updatePhoto, deletePhoto, updateAlbum } = useAppContext();
   const album = albums.find(a => a.id === id);
   const { currentStreak, consistency } = useStreak(id, album?.createdAt);
 

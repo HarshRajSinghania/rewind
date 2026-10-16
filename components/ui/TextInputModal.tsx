@@ -84,7 +84,7 @@ export default function TextInputModal({
             accessibilityLabel={placeholder || title}
           />
           {showEmptyError ? (
-            <Text style={[styles.errorHint, { fontFamily: fonts.regular }]}>name can't be empty</Text>
+            <Text style={[styles.errorHint, { fontFamily: fonts.regular }]}>{"name can't be empty"}</Text>
           ) : null}
           <View style={styles.row}>
             <Pressable

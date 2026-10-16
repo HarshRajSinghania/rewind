@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Modal, StyleSheet, useWindowDimensions, Alert } from 'react-native';
+import { View, TextInput, Modal, StyleSheet, useWindowDimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { File, Paths } from 'expo-file-system';

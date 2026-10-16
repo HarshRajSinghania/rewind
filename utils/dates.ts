@@ -43,7 +43,7 @@ export function getToday(): string {
 // Sun-origin label array; rotated at use-time by getFirstWeekday()
 const _DAY_LABELS_SUN_ORIGIN = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-export function getWeekDays(referenceDate?: string): Array<{ date: string; dayLabel: string; dayNumber: number }> {
+export function getWeekDays(referenceDate?: string): { date: string; dayLabel: string; dayNumber: number }[] {
   const ref = referenceDate ? new Date(referenceDate + 'T12:00:00') : new Date();
   const firstWeekday = getFirstWeekday(); // 0=Sun, 1=Mon, …
   const dayOfWeek = ref.getDay(); // 0=Sun
@@ -52,7 +52,7 @@ export function getWeekDays(referenceDate?: string): Array<{ date: string; dayLa
   const weekStart = new Date(ref);
   weekStart.setDate(ref.getDate() - offset);
 
-  const days: Array<{ date: string; dayLabel: string; dayNumber: number }> = [];
+  const days: { date: string; dayLabel: string; dayNumber: number }[] = [];
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart);
@@ -65,7 +65,7 @@ export function getWeekDays(referenceDate?: string): Array<{ date: string; dayLa
   return days;
 }
 
-export function getCalendarMonth(year: number, month: number): Array<Array<string | null>> {
+export function getCalendarMonth(year: number, month: number): (string | null)[][] {
   // month is 1-based (1=Jan)
   const firstDay = new Date(year, month - 1, 1);
   const lastDay = new Date(year, month, 0);
@@ -75,8 +75,8 @@ export function getCalendarMonth(year: number, month: number): Array<Array<strin
   // Leading blank cells = how many columns before the 1st of the month
   const leadingBlanks = (startDow - firstWeekday + 7) % 7;
 
-  const weeks: Array<Array<string | null>> = [];
-  let currentWeek: Array<string | null> = [];
+  const weeks: (string | null)[][] = [];
+  let currentWeek: (string | null)[] = [];
 
   // Pad start
   for (let i = 0; i < leadingBlanks; i++) {

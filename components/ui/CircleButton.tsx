@@ -1,7 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, ViewStyle, PressableProps } from 'react-native';
 import { haptics } from '@/utils/haptics';
-import { Colors } from '@/constants/theme';
 
 interface CircleButtonProps extends Omit<PressableProps, 'onPress' | 'style'> {
   children: React.ReactNode;

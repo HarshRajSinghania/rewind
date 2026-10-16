@@ -7,7 +7,6 @@ import {
   loadProfile,
   saveSettings,
   loadSettings,
-  saveAlbums,
   loadAlbums,
   saveUnlockedAlbumIds,
   loadUnlockedAlbumIds,

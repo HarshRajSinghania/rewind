@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -9,7 +9,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider } from '@/context/AppContext';
 import { FontProvider } from '@/context/FontContext';
 import { Colors, Fonts } from '@/constants/theme';
-import React from 'react';
 
 SplashScreen.preventAutoHideAsync();
 

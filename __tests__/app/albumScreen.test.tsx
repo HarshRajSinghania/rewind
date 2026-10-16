@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react-native';
+import { render } from '@testing-library/react-native';
 import AlbumDetailScreen from '@/app/album/[id]';
 import { FontProvider } from '@/context/FontContext';
 import type { PhotoEntry } from '@/types';

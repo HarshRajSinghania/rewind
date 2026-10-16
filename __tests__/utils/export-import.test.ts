@@ -59,7 +59,7 @@ describe('exportToBackup', () => {
       makePhoto({ imageUri: 'file:///b.jpg', date: '2026-03-09' }),
       makePhoto({ imageUri: 'https://remote/x.jpg', date: '2026-03-10' }),
     ];
-    const progress: Array<[number, number]> = [];
+    const progress: [number, number][] = [];
     const res = await exportToBackup(photos, 'Daily', (c, t) => progress.push([c, t]), {
       cancelled: false,
     });
@@ -150,7 +150,7 @@ describe('importFromBackup', () => {
       },
       { 'images/a.jpg': 'QUJD', 'images/b.jpg': 'REVG' }
     );
-    const progress: Array<[number, number]> = [];
+    const progress: [number, number][] = [];
     const photos = await importFromBackup('album-1', (c, t) => progress.push([c, t]), {
       cancelled: false,
     });

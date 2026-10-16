@@ -1,6 +1,5 @@
 import { useCallback, useMemo } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
-import type { Frame } from 'react-native-vision-camera';
 import type { FaceLandmarks } from '@/types';
 
 // MLKit face detection is only available on physical devices (not simulator).

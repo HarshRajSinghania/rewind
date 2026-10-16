@@ -10,11 +10,10 @@ import { useGreeting } from '@/hooks/useGreeting';
 import { useAppContext } from '@/context/AppContext';
 import { getToday, formatDateLabel } from '@/utils/dates';
 import { haptics } from '@/utils/haptics';
-import Viewfinder, { type FaceState } from '@/components/camera/Viewfinder';
+import Viewfinder, { type FaceState, type ViewfinderRef } from '@/components/camera/Viewfinder';
 import CameraControls from '@/components/camera/CameraControls';
 import TimerSelector from '@/components/camera/TimerSelector';
 import CapturePreview from '@/components/camera/CapturePreview';
-import type { ViewfinderRef } from '@/components/camera/Viewfinder';
 import { useAutoCapture } from '@/hooks/useAutoCapture';
 import { computeAlignmentScore, alignmentStatus } from '@/utils/alignment';
 import { previewMirroring } from '@/utils/cameraPreview';
@@ -123,7 +122,7 @@ export default function CameraScreen() {
         setCapturedLandmarks(landmarks ? { ...landmarks, isMirrored } : null);
         setShowPreview(true);
       }
-    } catch (e) {
+    } catch {
       haptics.error();
       Alert.alert('Capture Failed', 'Could not take photo. Please try again.');
     } finally {

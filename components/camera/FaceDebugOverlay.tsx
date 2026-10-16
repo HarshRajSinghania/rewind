@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useAnimatedProps } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { Colors } from '@/constants/theme';
 
@@ -30,7 +30,7 @@ interface FaceDebugOverlayProps {
 
 const DOT_SIZE = 10;
 
-function makeDotStyle(
+function useDotStyle(
   normX: SharedValue<number>,
   normY: SharedValue<number>,
   hasFace: SharedValue<boolean>,
@@ -50,7 +50,7 @@ function makeDotStyle(
   });
 }
 
-function makeBoxStyle(
+function useBoxStyle(
   fX: SharedValue<number>,
   fY: SharedValue<number>,
   fW: SharedValue<number>,
@@ -79,12 +79,12 @@ export default function FaceDebugOverlay({ sharedValues, containerWidth, contain
   const height = containerHeight || 1;
   const sv = sharedValues;
 
-  const boxStyle = makeBoxStyle(sv.faceX, sv.faceY, sv.faceWidth, sv.faceHeight, sv.hasFace, width, height);
-  const leftEyeStyle = makeDotStyle(sv.leftEyeX, sv.leftEyeY, sv.hasFace, width, height);
-  const rightEyeStyle = makeDotStyle(sv.rightEyeX, sv.rightEyeY, sv.hasFace, width, height);
-  const noseStyle = makeDotStyle(sv.noseX, sv.noseY, sv.hasFace, width, height);
-  const mouthLeftStyle = makeDotStyle(sv.mouthLeftX, sv.mouthLeftY, sv.hasFace, width, height);
-  const mouthRightStyle = makeDotStyle(sv.mouthRightX, sv.mouthRightY, sv.hasFace, width, height);
+  const boxStyle = useBoxStyle(sv.faceX, sv.faceY, sv.faceWidth, sv.faceHeight, sv.hasFace, width, height);
+  const leftEyeStyle = useDotStyle(sv.leftEyeX, sv.leftEyeY, sv.hasFace, width, height);
+  const rightEyeStyle = useDotStyle(sv.rightEyeX, sv.rightEyeY, sv.hasFace, width, height);
+  const noseStyle = useDotStyle(sv.noseX, sv.noseY, sv.hasFace, width, height);
+  const mouthLeftStyle = useDotStyle(sv.mouthLeftX, sv.mouthLeftY, sv.hasFace, width, height);
+  const mouthRightStyle = useDotStyle(sv.mouthRightX, sv.mouthRightY, sv.hasFace, width, height);
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Animated.View style={[styles.box, boxStyle]} />
