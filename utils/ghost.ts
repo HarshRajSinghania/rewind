@@ -2,23 +2,17 @@
  * Placement of the ghost (the last photo, drawn over the viewfinder). Pure — no React,
  * no native modules.
  */
-import {
-  computeFaceTransform,
-  coverEyeDistance,
-  eyeDistance,
-  medianEyeDistance,
-  EYE_ANCHOR_Y,
-  type FaceFrameLayout,
-  type Size,
-} from '@/utils/faceAlign';
-import type { FaceScan } from '@/types';
+import { computeFaceTransform, eyeDistance, type FaceFrameLayout, type Size } from '@/utils/faceAlign';
+import type { FaceScan, Framing } from '@/types';
 
 /** Where the eyes should be, normalized to the viewfinder; `dist` is a fraction of its width. */
-export interface EyeTarget {
-  x: number;
-  y: number;
-  dist: number;
-}
+export type EyeTarget = Framing;
+
+/**
+ * Arm's-length framing, measured (MediaPipe) from the shot the user called ideal: eyes
+ * centered, 38% down, pupils 0.115 frame-widths apart. Used until an album saves its own.
+ */
+export const DEFAULT_FRAMING: Framing = { x: 0.5, y: 0.383, dist: 0.115 };
 
 export interface GhostPlacement {
   /** Image layout in viewfinder px, the same shape the timelapse player uses. */
@@ -28,22 +22,24 @@ export interface GhostPlacement {
 }
 
 /**
- * Eyes on the timelapse anchor (centered, EYE_ANCHOR_Y down), level, and as far apart as
- * the album's median face — so lining up with the ghost frames today the way playback
- * will. null when the photo has no usable scan; the ghost then falls back to a cover fit.
+ * The last photo placed so its eyes sit where the album's framing puts them, level and as far
+ * apart as the framing says — lining up with it gives the framing the user chose. null when the
+ * photo has no usable scan; the ghost then falls back to a cover fit.
  */
-export function placeGhost(
-  scan: FaceScan | undefined,
-  albumScans: (FaceScan | undefined)[],
-  view: Size,
-): GhostPlacement | null {
+export function placeGhost(scan: FaceScan | undefined, framing: Framing, view: Size): GhostPlacement | null {
   if (!scan) return null;
-  const own = coverEyeDistance(scan, view);
   const dist = eyeDistance(scan);
-  if (own === null || dist === null) return null;
-  const layout = computeFaceTransform(scan, view, medianEyeDistance(albumScans, view) ?? own);
+  if (dist === null) return null;
+  const layout = computeFaceTransform(scan, view, framing.dist * view.w, framing);
   if (!layout) return null;
-  // The zoom cap can stop short of the median: aim at the eyes as drawn.
+  // The zoom cap can stop short of the framing: aim at the eyes as drawn.
   const drawn = (dist * layout.width) / scan.width;
-  return { layout, eyes: { x: 0.5, y: EYE_ANCHOR_Y, dist: drawn / view.w } };
+  return { layout, eyes: { x: framing.x, y: framing.y, dist: drawn / view.w } };
+}
+
+/** The live face's framing, to save as the album's; null without both eyes. */
+export function framingFromFace(face: { hasFace: boolean; eyeMidX?: number; eyeMidY?: number; eyeDist?: number }): Framing | null {
+  if (!face.hasFace || face.eyeMidX === undefined || face.eyeMidY === undefined || !(face.eyeDist! > 0)) return null;
+  const r = (v: number) => Number(v.toFixed(3));
+  return { x: r(face.eyeMidX), y: r(face.eyeMidY), dist: r(face.eyeDist!) };
 }

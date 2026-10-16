@@ -75,6 +75,8 @@ export function computeFaceTransform(
   scan: FaceScan,
   container: Size,
   targetEyeDist: number,
+  /** Eye midpoint target as fractions of the container. */
+  anchor: { x: number; y: number } = { x: 0.5, y: EYE_ANCHOR_Y },
 ): FaceFrameLayout | null {
   if (!(container.w > 0 && container.h > 0 && targetEyeDist > 0)) return null;
   const g = eyeGeometry(scan);
@@ -85,8 +87,8 @@ export function computeFaceTransform(
   return {
     width: scan.width * s,
     height: scan.height * s,
-    left: container.w / 2 - midX,
-    top: EYE_ANCHOR_Y * container.h - midY,
+    left: anchor.x * container.w - midX,
+    top: anchor.y * container.h - midY,
     transformOrigin: [midX, midY, 0],
     rotation: -g.angle,
   };

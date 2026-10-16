@@ -26,6 +26,14 @@ export interface AppSettings {
   alignFaces: boolean;
 }
 
+/** Where the eyes go in a shot: midpoint and pupil distance as fractions of the 3:4 frame. */
+export interface Framing {
+  x: number;
+  y: number;
+  /** Pupil distance as a fraction of the frame width. */
+  dist: number;
+}
+
 export interface Album {
   id: string;
   name: string;
@@ -33,6 +41,8 @@ export interface Album {
   reminderEnabled: boolean;
   reminderTime: string; // HH:MM
   isLocked: boolean;
+  /** The user's framing for this album (hold the shutter to save one). */
+  framing?: Framing;
 }
 
 export interface AppState {

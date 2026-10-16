@@ -18,7 +18,7 @@ import type { ViewfinderRef } from '@/components/camera/Viewfinder';
 import { useAutoCapture } from '@/hooks/useAutoCapture';
 import { computeAlignmentScore, alignmentStatus } from '@/utils/alignment';
 import { previewMirroring } from '@/utils/cameraPreview';
-import { placeGhost } from '@/utils/ghost';
+import { placeGhost, framingFromFace, DEFAULT_FRAMING } from '@/utils/ghost';
 import type { Size } from '@/utils/faceAlign';
 import { useFaceScanBackfill } from '@/hooks/useFaceScanBackfill';
 import { UserFocus, CaretLeft } from 'phosphor-react-native';
@@ -40,8 +40,8 @@ export default function CameraScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const canGoBack = navigation.canGoBack();
-  const { albums, settings } = useAppContext();
-  const { photos: albumPhotos, mostRecentPhoto, todayPhoto, addPhoto } = usePhotos(albumId);
+  const { albums, settings, updateAlbum } = useAppContext();
+  const { mostRecentPhoto, todayPhoto, addPhoto } = usePhotos(albumId);
   const { dayNumber } = useGreeting();
   const albumName = albums.find(a => a.id === albumId)?.name ?? albumId;
 
@@ -70,20 +70,19 @@ export default function CameraScreen() {
   const [faceSilence, setFaceSilence] = useState(false);
   const [viewfinderSize, setViewfinderSize] = useState<Size | null>(null);
 
-  // Reference target: captured from live video so we can bootstrap
-  // auto-capture even when no photo has faceLandmarks yet.
-  const [referenceTarget, setReferenceTarget] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [referenceJustSet, setReferenceJustSet] = useState(false);
+  // Where the eyes go in this album's shots; holding the shutter saves the current position.
+  const album = albums.find(a => a.id === albumId);
+  const framing = album?.framing ?? DEFAULT_FRAMING;
+  const [framingJustSaved, setFramingJustSaved] = useState(false);
 
   // The ghost needs the last photo's face scan: a fresh capture, or an album never played
   // aligned, hasn't got one yet. One photo, scanned in the background and saved.
   const ghostScanQueue = useMemo(() => (mostRecentPhoto ? [mostRecentPhoto] : []), [mostRecentPhoto]);
   useFaceScanBackfill(ghostScanQueue, true);
 
-  const albumScans = useMemo(() => albumPhotos.map((p) => p.faceScan), [albumPhotos]);
   const ghostPlacement = useMemo(
-    () => (viewfinderSize ? placeGhost(mostRecentPhoto?.faceScan, albumScans, viewfinderSize) : null),
-    [viewfinderSize, mostRecentPhoto?.faceScan, albumScans],
+    () => (viewfinderSize ? placeGhost(mostRecentPhoto?.faceScan, framing, viewfinderSize) : null),
+    [viewfinderSize, mostRecentPhoto?.faceScan, framing],
   );
   // Show the ghost the way the preview is mirrored. Only captures record their mirroring;
   // imported photos are drawn as they are.
@@ -177,11 +176,9 @@ export default function CameraScreen() {
   const handleFlip = () => {
     setFacing(prev => prev === 'front' ? 'back' : 'front');
     setIsMirrored(settings.mirrorSelfies);
-    setReferenceTarget(null);
   };
   const handleMirrorToggle = () => {
     setIsMirrored(prev => !prev);
-    setReferenceTarget(null);
   };
   const handleTimerToggle = () => setShowTimer(prev => !prev);
   const handleFaceGuideToggle = () => {
@@ -207,18 +204,11 @@ export default function CameraScreen() {
     setFaceSilence(silent);
   }, []);
 
-  // Auto-capture alignment target priority:
-  // 1. Reference target (user manually set via long-press)
-  // 2. The ghost's eyes (the last photo, eye-anchored like timelapse playback)
-  // 3. Most recent photo's face landmarks (no face scan available)
-  // 4. Default center position (for bootstrapping)
-  const alignmentTarget = referenceTarget ?? ghostPlacement?.eyes ?? mostRecentPhoto?.faceLandmarks?.faceBounds ?? null;
-  const hasAlignmentTarget = alignmentTarget !== null;
-
+  // Auto-capture and the status aim at the album's framing (the ghost is drawn there too).
+  const alignmentTarget = framing;
+  const hasAlignmentTarget = true;
   const alignmentScore = computeAlignmentScore(faceState, alignmentTarget);
-
-  // Lower threshold when bootstrapping (no target yet) so first capture is easier
-  const alignmentThreshold = hasAlignmentTarget ? 0.75 : 0.65;
+  const alignmentThreshold = 0.75;
 
   // Note: face-state ticks arrive throttled at ~10Hz (see Viewfinder), so
   // requiredFrames doubles as a hold duration: 15 ≈ 1.5s, 10 ≈ 1s.
@@ -226,28 +216,24 @@ export default function CameraScreen() {
     enabled: showFaceGuide && faceState.hasFace,
     alignmentScore,
     alignmentThreshold,
-    requiredFrames: hasAlignmentTarget ? 15 : 10,
+    requiredFrames: 15,
     cooldownMs: 3000,
     onCapture: doCapture,
   });
 
-  // Long-press shutter to capture current face position as a reference target
-  // (doesn't take a photo — just remembers where your face is for alignment)
-  const handleCaptureReference = useCallback(() => {
-    if (!faceState.hasFace) {
+  // Long-press the shutter to save where your face is now as this album's framing
+  // (doesn't take a photo): the ghost, the status and auto-capture aim there from then on.
+  const handleSaveFraming = useCallback(() => {
+    const next = faceState.hasFace ? framingFromFace(faceState) : null;
+    if (!next || !albumId) {
       haptics.error();
       return;
     }
-    setReferenceTarget({
-      x: faceState.faceX,
-      y: faceState.faceY,
-      width: faceState.faceWidth,
-      height: faceState.faceHeight,
-    });
+    updateAlbum(albumId, { framing: next });
     haptics.success();
-    setReferenceJustSet(true);
-    setTimeout(() => setReferenceJustSet(false), 1800);
-  }, [faceState]);
+    setFramingJustSaved(true);
+    setTimeout(() => setFramingJustSaved(false), 1800);
+  }, [faceState, albumId, updateAlbum]);
 
   const handleGhostOpacity = useCallback((value: number) => {
     setGhostOpacity(value);
@@ -295,10 +281,10 @@ export default function CameraScreen() {
   const status = guideOn
     ? alignmentStatus({ silent: faceSilence, face: faceState, score: alignmentScore, threshold: alignmentThreshold, target: alignmentTarget })
     : null;
-  const hint = referenceJustSet
-    ? 'reference set'
-    : guideOn && !hasAlignmentTarget
-    ? 'hold shutter to set reference'
+  const hint = framingJustSaved
+    ? 'framing saved'
+    : guideOn && !album?.framing
+    ? 'hold shutter to save this framing'
     : null;
 
   return (
@@ -330,7 +316,7 @@ export default function CameraScreen() {
               <Text style={[styles.statusText, { fontFamily: fonts.regular }]}>{status}</Text>
             ) : null}
             {hint ? (
-              <Text style={[styles.hintText, { fontFamily: fonts.regular }, referenceJustSet && styles.hintConfirm]}>
+              <Text style={[styles.hintText, { fontFamily: fonts.regular }, framingJustSaved && styles.hintConfirm]}>
                 {hint}
               </Text>
             ) : null}
@@ -387,7 +373,7 @@ export default function CameraScreen() {
 
         <CameraControls
           onCapture={handleCapture}
-          onCaptureReference={handleCaptureReference}
+          onCaptureReference={handleSaveFraming}
           onFlip={handleFlip}
           onTimerToggle={handleTimerToggle}
           onMirrorToggle={handleMirrorToggle}
