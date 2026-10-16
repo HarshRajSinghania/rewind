@@ -38,11 +38,3 @@ export function ringWindow(index: number, length: number, size: number): number[
   return frames;
 }
 
-/**
- * JS-timer deadline used by the current player until the UI-thread clock replaces it.
- * If we've already fallen past the next deadline, the next frame is due now.
- */
-export function nextFrameDeadline(prevDeadline: number, now: number, interval: number): number {
-  const next = prevDeadline + interval;
-  return next < now ? now : next;
-}

@@ -1,19 +1,23 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import { Image } from 'expo-image';
+import { useSharedValue, useFrameCallback } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { Play, Pause, SkipBack, SkipForward } from 'phosphor-react-native';
 import { haptics } from '@/utils/haptics';
 import { Colors, Fonts } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
+import PlayerFrame, { type FrameLayout } from '@/components/timelapse/PlayerFrame';
+import { computeFaceTransform, medianEyeDistance, type Size } from '@/utils/faceAlign';
+import { frameInterval, playbackStep, ringWindow, RING_SIZE } from '@/utils/playback';
+import type { PhotoEntry } from '@/types';
 
 function formatBadgeDate(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toLowerCase();
 }
-import { getImageSource } from '@/utils/imageSource';
-import { computeFaceTransform, medianEyeDistance, type Size } from '@/utils/faceAlign';
-import { nextFrameDeadline } from '@/utils/playback';
-import type { PhotoEntry } from '@/types';
+
+/** How often the UI-thread clock tells JS where it is (ring refill, scrubber, badge). */
+const REPORT_MS = 100;
 
 export interface TimelapsePlayerHandle {
   seekTo: (index: number) => void;
@@ -29,114 +33,130 @@ interface TimelapsePlayerProps {
   scanProgress?: { done: number; total: number } | null;
   onFrameChange?: (index: number) => void;
   onPlaybackEnd?: (index: number) => void;
+  onPlayingChange?: (playing: boolean) => void;
 }
 
+/**
+ * Timelapse player. Frames switch on the UI thread: a Reanimated frame callback owns
+ * the playhead and only advances once the next frame has decoded, while JS keeps a ring
+ * of upcoming frames mounted (each in its own aligned layout) and hears from the clock
+ * ~10x/s. No React render or JS timer per frame, so it holds ~30 photos/sec.
+ */
 const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
-  function TimelapsePlayer({ photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd }, ref) {
+  function TimelapsePlayer(
+    { photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd, onPlayingChange },
+    ref,
+  ) {
     const { fonts } = useFont();
-    const [frameIndex, setFrameIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [size, setSize] = useState<Size | null>(null);
-    const frameRef = useRef(0);
-    const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const speedRef = useRef(speed);
-    const onFrameChangeRef = useRef(onFrameChange);
-    const onPlaybackEndRef = useRef(onPlaybackEnd);
+    // JS mirror of the UI-thread playhead (`frame`) and the frame on screen (`shown`),
+    // refreshed ~10x/s while playing and exactly on pause/seek.
+    const [view, setView] = useState({ frame: 0, shown: 0 });
+    const photosRef = useRef(photos);
+    photosRef.current = photos;
+    const callbacks = useRef({ onFrameChange, onPlaybackEnd, onPlayingChange });
+    callbacks.current = { onFrameChange, onPlaybackEnd, onPlayingChange };
 
-    speedRef.current = speed;
-    onFrameChangeRef.current = onFrameChange;
-    onPlaybackEndRef.current = onPlaybackEnd;
+    const frame = useSharedValue(0);
+    const shown = useSharedValue(0);
+    const dueAt = useSharedValue(0);
+    const lastReport = useSharedValue(0);
+    const interval = useSharedValue(frameInterval(speed));
+    const ids = useSharedValue<string[]>(photos.map((p) => p.id));
+    const loaded = useSharedValue<Record<string, true>>({});
 
-    // Pause without firing onPlaybackEnd — used for manual seeks.
-    const pausePlayback = useCallback(() => {
-      if (intervalRef.current) {
-        clearTimeout(intervalRef.current as unknown as number);
-        intervalRef.current = null;
+    useEffect(() => { interval.value = frameInterval(speed); }, [speed, interval]);
+    useEffect(() => { ids.value = photos.map((p) => p.id); }, [photos, ids]);
+
+    const report = useCallback((f: number, s: number) => {
+      setView((prev) => (prev.frame === f && prev.shown === s ? prev : { frame: f, shown: s }));
+      callbacks.current.onFrameChange?.(f);
+    }, []);
+
+    // UI-thread clock: advance only when due and the next frame has decoded (else hold).
+    const clock = useFrameCallback((info) => {
+      'worklet';
+      const n = ids.value.length;
+      if (n < 2) return;
+      if (dueAt.value === 0) dueAt.value = info.timestamp + interval.value;
+      const next = (frame.value + 1) % n;
+      const step = playbackStep(info.timestamp, dueAt.value, interval.value, loaded.value[ids.value[next]] === true);
+      dueAt.value = step.dueAt;
+      if (step.advance) {
+        frame.value = next;
+        shown.value = next;
       }
-      setIsPlaying(false);
-    }, []);
-
-    useImperativeHandle(ref, () => ({
-      seekTo(index: number) {
-        // Fix 3: pause the live timer before snapping to the requested frame so
-        // the next tick doesn't override the user's chosen position.
-        pausePlayback();
-        frameRef.current = index;
-        setFrameIndex(index);
-      },
-      pause() {
-        pausePlayback();
-      },
-    }), [pausePlayback]);
-
-    const stopPlayback = useCallback(() => {
-      if (intervalRef.current) {
-        clearTimeout(intervalRef.current as unknown as number);
-        intervalRef.current = null;
+      if (info.timestamp - lastReport.value >= REPORT_MS) {
+        lastReport.value = info.timestamp;
+        scheduleOnRN(report, frame.value, shown.value);
       }
-      setIsPlaying(false);
-      onPlaybackEndRef.current?.(frameRef.current);
+    }, false);
+    const clockRef = useRef(clock);
+    clockRef.current = clock;
+
+    const setPlaying = useCallback((playing: boolean) => {
+      clockRef.current.setActive(playing);
+      setIsPlaying(playing);
+      callbacks.current.onPlayingChange?.(playing);
     }, []);
 
-    const startPlayback = useCallback(() => {
-      if (photos.length <= 1) return;
-      setIsPlaying(true);
+    const play = useCallback(() => {
+      if (photosRef.current.length <= 1) return;
+      dueAt.value = 0;
+      lastReport.value = 0;
+      setPlaying(true);
+    }, [dueAt, lastReport, setPlaying]);
 
-      // Fixed deadlines, so each tick's render work doesn't stretch the frame interval.
-      let deadline = Date.now();
-      const schedule = () => {
-        const now = Date.now();
-        deadline = nextFrameDeadline(deadline, now, 500 / speedRef.current);
-        intervalRef.current = setTimeout(() => {
-          frameRef.current = frameRef.current >= photos.length - 1 ? 0 : frameRef.current + 1;
-          setFrameIndex(frameRef.current);
-          onFrameChangeRef.current?.(frameRef.current);
-          if (intervalRef.current !== null) schedule();
-        }, deadline - now) as unknown as ReturnType<typeof setTimeout>;
-      };
-      schedule();
-    }, [photos.length]);
+    const pause = useCallback((notifyEnd: boolean) => {
+      setPlaying(false);
+      setView({ frame: frame.value, shown: shown.value });
+      if (notifyEnd) callbacks.current.onPlaybackEnd?.(frame.value);
+    }, [frame, shown, setPlaying]);
 
-    useEffect(() => {
-      return () => {
-        if (intervalRef.current) clearTimeout(intervalRef.current as unknown as number);
-      };
-    }, []);
+    // Seek: move the playhead now; keep showing the old frame until the target decodes.
+    const seek = useCallback((index: number) => {
+      setPlaying(false);
+      frame.value = index;
+      const id = photosRef.current[index]?.id;
+      if (id && loaded.value[id]) shown.value = index;
+      setView({ frame: index, shown: shown.value });
+    }, [frame, shown, loaded, setPlaying]);
 
-    // Fix 1 & 2: when the photo set shrinks (or changes size), stop any running
-    // timer and clamp the frame index so photos[frameIndex] is never undefined.
+    useImperativeHandle(ref, () => ({ seekTo: seek, pause: () => pause(false) }), [seek, pause]);
+
+    // Ring: the frame on screen plus the playhead and the frames after it.
+    const ringFrames = useMemo(() => {
+      const list = [view.shown, ...ringWindow(view.frame, photos.length, RING_SIZE)];
+      return list.filter((f, i) => f < photos.length && list.indexOf(f) === i);
+    }, [view, photos.length]);
+    const ringIdsRef = useRef<ReadonlySet<string>>(new Set());
+    ringIdsRef.current = new Set(ringFrames.map((f) => photos[f].id));
+
+    const markLoaded = useCallback((id: string) => {
+      if (!ringIdsRef.current.has(id)) return; // late event from an unmounted frame
+      if (!loaded.value[id]) loaded.value = { ...loaded.value, [id]: true };
+      const f = frame.value;
+      if (photosRef.current[f]?.id === id && shown.value !== f) {
+        shown.value = f; // paused on a frame that just finished decoding
+        setView({ frame: f, shown: f });
+      }
+    }, [frame, shown, loaded]);
+
+    const forget = useCallback((id: string) => {
+      if (!loaded.value[id]) return;
+      const next = { ...loaded.value };
+      delete next[id];
+      loaded.value = next;
+    }, [loaded]);
+
+    // When the photo set changes size, clamp the playhead and stop a clock running
+    // against the old set.
     useEffect(() => {
       if (photos.length === 0) return;
-      if (frameRef.current >= photos.length) {
-        const clamped = photos.length - 1;
-        frameRef.current = clamped;
-        setFrameIndex(clamped);
-      }
-      // Stop a stale timer that was scheduled against the old photos.length.
-      stopPlayback();
-    }, [photos.length, stopPlayback]);
-
-    const togglePlay = useCallback(() => {
-      haptics.tap();
-      if (isPlaying) stopPlayback();
-      else startPlayback();
-    }, [isPlaying, stopPlayback, startPlayback]);
-
-    const skipPrev = useCallback(() => {
-      haptics.tap();
-      const next = frameRef.current > 0 ? frameRef.current - 1 : photos.length - 1;
-      frameRef.current = next;
-      setFrameIndex(next);
-      onPlaybackEndRef.current?.(next);
-    }, [photos.length]);
-
-    const skipNext = useCallback(() => {
-      haptics.tap();
-      const next = frameRef.current < photos.length - 1 ? frameRef.current + 1 : 0;
-      frameRef.current = next;
-      setFrameIndex(next);
-      onPlaybackEndRef.current?.(next);
-    }, [photos.length]);
+      if (frame.value >= photos.length) seek(photos.length - 1);
+      pause(true);
+    }, [photos.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleLayout = useCallback((e: LayoutChangeEvent) => {
       const { width, height } = e.nativeEvent.layout;
@@ -149,57 +169,16 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
       [align, size, photos],
     );
 
-    // Defensive clamp: guard against a render cycle before the useEffect fires.
-    const safeIndex = photos.length > 0 ? Math.min(frameIndex, photos.length - 1) : 0;
-    const current = photos[safeIndex];
-
-    // Aligned playback buffers frames: each is mounted in its own layout and only shown
-    // once it has loaded, so the screen never blanks or puts the old face at the new
-    // transform (a single <Image> does one or the other). The next frame preloads hidden
-    // so its tick swaps in at once — at 4x a frame only lasts 125ms.
-    const [loadedIds, setLoadedIds] = useState<ReadonlySet<string>>(() => new Set());
-    const [lastShownId, setLastShownId] = useState<string | null>(null);
-    const aligning = align && !!size && targetEyeDist != null;
-    const next = photos.length > 1 ? photos[(safeIndex + 1) % photos.length] : undefined;
-    const lastShown = photos.find((p) => p.id === lastShownId && loadedIds.has(p.id));
-    const shown = !current || loadedIds.has(current.id) ? current : (lastShown ?? current);
-    const bufferedFrames = aligning && current
-      ? [shown, current, next].filter(
-          (p, i, all): p is PhotoEntry => !!p && all.findIndex((q) => q?.id === p.id) === i,
-        )
-      : [];
-    const bufferedKey = bufferedFrames.map((p) => p.id).join('|');
-    const bufferedIdsRef = useRef<ReadonlySet<string>>(new Set());
-    bufferedIdsRef.current = new Set(bufferedFrames.map((p) => p.id));
-
-    useEffect(() => {
-      if (shown && shown.id !== lastShownId) setLastShownId(shown.id);
-    }, [shown?.id, lastShownId]);
-
-    // Forget loads of frames that left the buffer: a remounted view must decode again.
-    useEffect(() => {
-      setLoadedIds((prev) => {
-        const kept = [...prev].filter((id) => bufferedIdsRef.current.has(id));
-        return kept.length === prev.size ? prev : new Set(kept);
-      });
-    }, [bufferedKey]);
-
-    const markLoaded = useCallback((id: string) => {
-      if (!bufferedIdsRef.current.has(id)) return; // late event from an unmounted frame
-      setLoadedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-    }, []);
-
-    function frameProps(photo: PhotoEntry) {
-      const layout = photo.faceScan && size && targetEyeDist
+    const frameLayout = (photo: PhotoEntry): FrameLayout => {
+      const layout = align && photo.faceScan && size && targetEyeDist
         ? computeFaceTransform(photo.faceScan, size, targetEyeDist)
         : null;
-      if (!layout) return { style: StyleSheet.absoluteFill, contentFit: 'cover' as const };
+      if (!layout) return { style: StyleSheet.absoluteFill, contentFit: 'cover' };
       return {
         // Zoom is baked into width/height (not a scale transform) so expo-image
-        // decodes at the frame's layout size, not the full-res photo (a zoom-capped
-        // far-away face can still approach full res).
+        // decodes at the frame's layout size, not the full-res photo.
         style: {
-          position: 'absolute' as const,
+          position: 'absolute',
           left: layout.left,
           top: layout.top,
           width: layout.width,
@@ -207,38 +186,41 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
           transformOrigin: layout.transformOrigin,
           transform: [{ rotate: `${layout.rotation}rad` }],
         },
-        contentFit: 'fill' as const,
+        contentFit: 'fill',
       };
-    }
+    };
+
+    const togglePlay = () => {
+      haptics.tap();
+      if (isPlaying) pause(true);
+      else play();
+    };
+
+    const skip = (delta: number) => {
+      haptics.tap();
+      const n = photos.length;
+      if (n === 0) return;
+      const target = (view.frame + delta + n) % n;
+      seek(target);
+      callbacks.current.onPlaybackEnd?.(target);
+    };
+
+    const current = photos.length > 0 ? photos[Math.min(view.shown, photos.length - 1)] : undefined;
 
     return (
       <View style={styles.wrapper}>
         <View style={styles.screen} onLayout={handleLayout} testID="timelapse-screen">
-          {aligning ? (
-            bufferedFrames.map((photo) => {
-              const { style, contentFit } = frameProps(photo);
-              const loaded = () => markLoaded(photo.id);
-              return (
-                <Image
-                  key={photo.id}
-                  source={getImageSource(photo.imageUri)}
-                  style={[style, photo.id !== shown.id && styles.pendingFrame]}
-                  contentFit={contentFit}
-                  transition={0}
-                  // Count an error as loaded too, so one broken file can't freeze playback.
-                  onLoad={loaded}
-                  onError={loaded}
-                />
-              );
-            })
-          ) : current && (
-            <Image
-              source={getImageSource(current.imageUri)}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={150}
+          {ringFrames.map((f) => (
+            <PlayerFrame
+              key={photos[f].id}
+              photo={photos[f]}
+              frameIndex={f}
+              shown={shown}
+              layout={frameLayout(photos[f])}
+              onLoaded={markLoaded}
+              onUnmount={forget}
             />
-          )}
+          ))}
 
           <View style={styles.badge}>
             <Text style={[styles.badgeText, { fontFamily: fonts.regular }]}>
@@ -256,17 +238,17 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
 
           {/* Transport overlaid at bottom of image */}
           <View style={styles.transport}>
-            <Pressable onPress={skipPrev} hitSlop={12} style={styles.transportBtn}>
+            <Pressable onPress={() => skip(-1)} hitSlop={12} style={styles.transportBtn} accessibilityRole="button" accessibilityLabel="Previous frame">
               <SkipBack size={18} color={Colors.textPrimary} weight="fill" />
             </Pressable>
-            <Pressable onPress={togglePlay} style={styles.playBtn}>
+            <Pressable onPress={togglePlay} style={styles.playBtn} accessibilityRole="button" accessibilityLabel={isPlaying ? 'Pause' : 'Play'}>
               {isPlaying ? (
                 <Pause size={22} color={Colors.textPrimary} weight="fill" />
               ) : (
                 <Play size={22} color={Colors.textPrimary} weight="fill" />
               )}
             </Pressable>
-            <Pressable onPress={skipNext} hitSlop={12} style={styles.transportBtn}>
+            <Pressable onPress={() => skip(1)} hitSlop={12} style={styles.transportBtn} accessibilityRole="button" accessibilityLabel="Next frame">
               <SkipForward size={18} color={Colors.textPrimary} weight="fill" />
             </Pressable>
           </View>
@@ -299,9 +281,6 @@ const styles = StyleSheet.create({
   badgeRight: {
     left: undefined,
     right: 16,
-  },
-  pendingFrame: {
-    opacity: 0,
   },
   badgeText: {
     fontFamily: Fonts.mono.regular,

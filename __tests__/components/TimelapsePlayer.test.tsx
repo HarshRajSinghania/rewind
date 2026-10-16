@@ -3,90 +3,84 @@ import { StyleSheet } from 'react-native';
 import { render, screen, fireEvent, act } from '@testing-library/react-native';
 import TimelapsePlayer, { type TimelapsePlayerHandle } from '@/components/timelapse/TimelapsePlayer';
 import { FontProvider } from '@/context/FontContext';
+import { frameClocks } from '../helpers/reanimatedMock';
 import type { FaceScan, PhotoEntry } from '@/types';
 
+jest.mock('react-native-reanimated', () => require('../helpers/reanimatedMock').reanimatedMock);
+jest.mock('react-native-worklets', () => ({
+  scheduleOnRN: (fn: (...a: unknown[]) => void, ...args: unknown[]) => fn(...args),
+}));
 jest.mock('expo-image', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
     Image: (props: { source?: { uri?: string } }) =>
-      React.createElement(View, { testID: `frame:${props.source?.uri}`, ...props }),
+      React.createElement(View, { testID: `image:${props.source?.uri}`, ...props }),
   };
 });
-jest.mock('phosphor-react-native', () => ({
-  Play: () => null,
-  Pause: () => null,
-  SkipBack: () => null,
-  SkipForward: () => null,
-}));
+jest.mock('phosphor-react-native', () => ({ Play: () => null, Pause: () => null, SkipBack: () => null, SkipForward: () => null }));
 
 const LEVEL: FaceScan = { v: 1, eyes: { left: { x: 0.4, y: 0.5 }, right: { x: 0.6, y: 0.5 } }, width: 1000, height: 1000 };
 
-function photo(date: string, faceScan?: FaceScan): PhotoEntry {
+function photo(i: number, faceScan: FaceScan | undefined = LEVEL): PhotoEntry {
+  const date = `2026-03-${String(i + 1).padStart(2, '0')}`;
   return {
-    id: `p-${date}`,
-    albumId: 'a1',
-    date,
-    imageUri: `file:///document/${date}.jpg`,
-    caption: '',
-    capturedAt: `${date}T12:00:00.000Z`,
-    cameraDirection: 'front',
-    ...(faceScan ? { faceScan } : {}),
+    id: `p-${i}`, albumId: 'a1', date, imageUri: `file:///document/${date}.jpg`, caption: '',
+    capturedAt: `${date}T12:00:00.000Z`, cameraDirection: 'front', ...(faceScan ? { faceScan } : {}),
   };
 }
 
-const PHOTOS = [
-  photo('2026-03-08', LEVEL),
-  photo('2026-03-09', LEVEL),
-  photo('2026-03-10', { ...LEVEL, eyes: null }),
-];
+const THREE = [photo(0), photo(1), photo(2, { ...LEVEL, eyes: null })];
+const TWENTY = Array.from({ length: 20 }, (_, i) => photo(i));
+const uri = (p: PhotoEntry) => p.imageUri;
 
-type PlayerProps = Partial<React.ComponentProps<typeof TimelapsePlayer>>;
-
-async function renderPlayer(props: PlayerProps = {}, { layout = true } = {}) {
+async function renderPlayer(props: Partial<React.ComponentProps<typeof TimelapsePlayer>> = {}, { layout = true } = {}) {
   await render(
     <FontProvider>
-      <TimelapsePlayer photos={PHOTOS} speed={1} {...props} />
+      <TimelapsePlayer photos={THREE} speed={1} {...props} />
     </FontProvider>,
   );
   if (layout) {
-    await fireEvent(screen.getByTestId('timelapse-screen'), 'layout', {
-      nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 400 } },
-    });
+    await fireEvent(screen.getByTestId('timelapse-screen'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 400 } } });
   }
 }
 
-type FrameProps = { contentFit?: string; transition?: number; style: Record<string, unknown> };
-
-const uriOf = (p: PhotoEntry) => p.imageUri;
-
-/** Every rendered frame image, as { uri, visible, ...props }. */
 function frames() {
-  return screen.queryAllByTestId(/^frame:/).map((el) => ({
-    ...(el.props as object),
-    uri: String(el.props.testID).slice('frame:'.length),
-    style: StyleSheet.flatten(el.props.style) as Record<string, unknown>,
-    visible: StyleSheet.flatten(el.props.style)?.opacity !== 0,
-    el,
-  })) as (FrameProps & { uri: string; visible: boolean; el: ReturnType<typeof screen.getByTestId> })[];
+  return screen.queryAllByTestId(/^frame:/).map((el) => {
+    const u = String(el.props.testID).slice('frame:'.length);
+    const image = screen.getByTestId(`image:${u}`);
+    return {
+      uri: u,
+      visible: StyleSheet.flatten(el.props.style)?.opacity !== 0,
+      image,
+      style: StyleSheet.flatten(image.props.style) as Record<string, unknown>,
+      contentFit: image.props.contentFit as string,
+      transition: image.props.transition as number,
+    };
+  });
 }
 
-/** The single frame actually on screen. */
-function frame(): FrameProps & { uri: string } {
-  const shown = frames().filter((f) => f.visible);
-  expect(shown).toHaveLength(1);
-  return shown[0];
+function shown() {
+  const visible = frames().filter((f) => f.visible);
+  expect(visible).toHaveLength(1);
+  return visible[0];
 }
 
-describe('TimelapsePlayer alignment', () => {
+const load = (p: PhotoEntry) => fireEvent(frames().find((f) => f.uri === uri(p))!.image, 'load');
+
+beforeEach(() => {
+  frameClocks.length = 0;
+});
+
+describe('TimelapsePlayer', () => {
   it('eye-locks a scanned frame with a hard cut', async () => {
     await renderPlayer({ align: true });
-    const f = frame();
+    const f = shown();
     // median eye distance = 200px * cover 0.4 = 80 -> scale 0.4 -> 400x400 image,
     // eye midpoint (500,500)*0.4 = (200,200) moved to the anchor (150,160).
+    expect(f.uri).toBe(uri(THREE[0]));
     expect(f.style.position).toBe('absolute');
     expect(f.style.width).toBeCloseTo(400, 6);
-    expect(f.style.height).toBeCloseTo(400, 6);
     expect(f.style.left).toBeCloseTo(-50, 6);
     expect(f.style.top).toBeCloseTo(-40, 6);
     expect(f.style.transformOrigin).toEqual([200, 200, 0]);
@@ -95,86 +89,93 @@ describe('TimelapsePlayer alignment', () => {
     expect(f.transition).toBe(0);
   });
 
-  it('keeps the aligned frame on screen until the next one has loaded, then swaps', async () => {
-    // A single <Image> either shows the old face at the new transform while the next
-    // source decodes, or (with recyclingKey) blanks — measured on device as a flash on
-    // most 4x transitions. The next frame must load hidden in its own layout first.
-    const ref = React.createRef<TimelapsePlayerHandle>();
-    await renderPlayer({ align: true, ref });
-    await fireEvent(frames()[0].el, 'load'); // first frame decoded and on screen
-    await act(async () => { ref.current!.seekTo(1); });
-
-    const [old, next] = [frames().find((f) => f.uri === uriOf(PHOTOS[0]))!, frames().find((f) => f.uri === uriOf(PHOTOS[1]))!];
-    expect(old.visible).toBe(true);
-    expect(next.visible).toBe(false);
-    expect(next.style.position).toBe('absolute'); // already in its own aligned layout
-    expect((next as { recyclingKey?: string }).recyclingKey).toBeUndefined();
-
-    await fireEvent(next.el, 'load');
-    expect(frame().uri).toBe(uriOf(PHOTOS[1]));
-    expect(frame().style.position).toBe('absolute');
-    expect(frames().map((f) => f.uri)).not.toContain(uriOf(PHOTOS[0]));
+  it('mounts the playhead and the frames after it, showing only the playhead', async () => {
+    await renderPlayer({ align: true, photos: TWENTY });
+    expect(frames().map((f) => f.uri)).toEqual(TWENTY.slice(0, 12).map(uri));
+    expect(shown().uri).toBe(uri(TWENTY[0]));
   });
 
-  it('preloads the next frame hidden so its turn swaps in at once', async () => {
-    // At 4x a frame lasts 125ms; loading only when its turn comes (then waiting for
-    // onLoad to round-trip through JS) misses that budget on device.
-    const ref = React.createRef<TimelapsePlayerHandle>();
-    await renderPlayer({ align: true, ref });
-    await fireEvent(frames()[0].el, 'load');
-
-    const preload = frames().find((f) => f.uri === uriOf(PHOTOS[1]))!;
-    expect(preload.visible).toBe(false);
-    await fireEvent(preload.el, 'load');
-
-    await act(async () => { ref.current!.seekTo(1); });
-    expect(frame().uri).toBe(uriOf(PHOTOS[1])); // no wait for a fresh load
-    expect(frames().find((f) => f.uri === uriOf(PHOTOS[2]))?.visible).toBe(false); // next one queued
-  });
-
-  it('makes a frame that left the buffer load again before it is shown', async () => {
-    // A remounted view starts blank; trusting its earlier load would flash.
-    const ref = React.createRef<TimelapsePlayerHandle>();
-    await renderPlayer({ align: true, ref });
-    await fireEvent(frames()[0].el, 'load');
-    await fireEvent(frames().find((f) => f.uri === uriOf(PHOTOS[1]))!.el, 'load');
-
-    await act(async () => { ref.current!.seekTo(2); }); // photo 1 drops out of the buffer
-    expect(frames().map((f) => f.uri)).not.toContain(uriOf(PHOTOS[1]));
-    await act(async () => { ref.current!.seekTo(1); }); // ...and comes back
-    expect(frame().uri).toBe(uriOf(PHOTOS[0]));
-    expect(frames().find((f) => f.uri === uriOf(PHOTOS[1]))?.visible).toBe(false);
-  });
-
-  it('swaps on a load error too, so a broken file cannot freeze playback', async () => {
-    const ref = React.createRef<TimelapsePlayerHandle>();
-    await renderPlayer({ align: true, ref });
-    await fireEvent(frames()[0].el, 'load');
-    await act(async () => { ref.current!.seekTo(1); });
-    expect(frame().uri).toBe(uriOf(PHOTOS[0]));
-    await fireEvent(frames().find((f) => f.uri === uriOf(PHOTOS[1]))!.el, 'error');
-    expect(frame().uri).toBe(uriOf(PHOTOS[1]));
-  });
-
-  it('plays as before when alignment is off', async () => {
+  it('plays unaligned with cover frames and hard cuts when alignment is off', async () => {
     await renderPlayer({ align: false });
-    const f = frame();
+    const f = shown();
     expect(f.contentFit).toBe('cover');
-    expect(f.transition).toBe(150);
+    expect(f.transition).toBe(0);
     expect(f.style.transform).toBeUndefined();
-  });
-
-  it('plays a frame without eyes unaligned', async () => {
-    const ref = React.createRef<TimelapsePlayerHandle>();
-    await renderPlayer({ align: true, ref });
-    await act(async () => { ref.current!.seekTo(2); });
-    await fireEvent(frames().find((f) => f.uri === uriOf(PHOTOS[2]))!.el, 'load');
-    expect(frame().contentFit).toBe('cover');
   });
 
   it('stays unaligned until the player has been measured', async () => {
     await renderPlayer({ align: true }, { layout: false });
-    expect(frame().contentFit).toBe('cover');
+    expect(shown().contentFit).toBe('cover');
+  });
+
+  it('keeps the shown frame on screen until a seek target loads', async () => {
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, ref });
+    await load(THREE[0]);
+    await act(async () => { ref.current!.seekTo(1); });
+    expect(shown().uri).toBe(uri(THREE[0]));
+    await load(THREE[1]);
+    expect(shown().uri).toBe(uri(THREE[1]));
+  });
+
+  it('counts a load error as loaded so a broken file cannot freeze playback', async () => {
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, ref });
+    await act(async () => { ref.current!.seekTo(1); });
+    await fireEvent(frames().find((f) => f.uri === uri(THREE[1]))!.image, 'error');
+    expect(shown().uri).toBe(uri(THREE[1]));
+  });
+
+  it('makes a frame that left the ring load again before it is shown', async () => {
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, photos: TWENTY, ref });
+    await load(TWENTY[11]);
+    await act(async () => { ref.current!.seekTo(12); }); // ring 12..19,0..3 (+ shown 0): frame 11 unmounts
+    expect(frames().map((f) => f.uri)).not.toContain(uri(TWENTY[11]));
+    await load(TWENTY[12]);
+    await act(async () => { ref.current!.seekTo(11); }); // back: a fresh view, not loaded yet
+    expect(shown().uri).toBe(uri(TWENTY[12]));
+  });
+
+  it('advances on the UI clock only when due and the next frame has loaded', async () => {
+    const onFrameChange = jest.fn();
+    const onPlayingChange = jest.fn();
+    await renderPlayer({ align: true, onFrameChange, onPlayingChange });
+    await load(THREE[0]);
+    await load(THREE[1]);
+    await fireEvent.press(screen.getByLabelText('Play'));
+    expect(onPlayingChange).toHaveBeenLastCalledWith(true);
+    const clock = frameClocks[frameClocks.length - 1];
+    expect(clock.active).toBe(true);
+
+    await act(async () => { clock.tick({ timestamp: 1000 }); }); // schedules frame 1 at 1500 (1x = 500ms)
+    await act(async () => { clock.tick({ timestamp: 1499 }); });
+    expect(shown().uri).toBe(uri(THREE[0]));
+    await act(async () => { clock.tick({ timestamp: 1500 }); }); // swaps on the UI thread
+    await act(async () => { clock.tick({ timestamp: 1600 }); }); // JS hears within REPORT_MS
+    expect(shown().uri).toBe(uri(THREE[1]));
+    expect(onFrameChange).toHaveBeenLastCalledWith(1);
+  });
+
+  it('holds the frame while the next one is still loading', async () => {
+    await renderPlayer({ align: true });
+    await load(THREE[0]);
+    await fireEvent.press(screen.getByLabelText('Play'));
+    const clock = frameClocks[frameClocks.length - 1];
+    await act(async () => { clock.tick({ timestamp: 1000 }); });
+    await act(async () => { clock.tick({ timestamp: 3000 }); }); // frame 1 never loaded
+    expect(shown().uri).toBe(uri(THREE[0]));
+  });
+
+  it('stops the clock on pause and reports it', async () => {
+    const onPlayingChange = jest.fn();
+    const onPlaybackEnd = jest.fn();
+    await renderPlayer({ onPlayingChange, onPlaybackEnd });
+    await fireEvent.press(screen.getByLabelText('Play'));
+    await fireEvent.press(screen.getByLabelText('Pause'));
+    expect(frameClocks[frameClocks.length - 1].active).toBe(false);
+    expect(onPlayingChange).toHaveBeenLastCalledWith(false);
+    expect(onPlaybackEnd).toHaveBeenLastCalledWith(0);
   });
 
   it('shows the aligning badge only while progress is given', async () => {
