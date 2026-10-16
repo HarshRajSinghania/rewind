@@ -63,6 +63,8 @@ export const reanimatedMock = {
     return React.useRef<T | null>(null);
   },
   scrollTo: jest.fn(),
+  // UI → JS calls run inline: the mock has no separate UI runtime.
+  runOnJS: <A extends unknown[]>(fn: (...args: A) => void) => fn,
   createAnimatedComponent<P extends object>(Component: React.ComponentType<P>) {
     // Animated props arrive via `animatedProps`; merge them so tests can read them.
     return (props: P & { animatedProps?: object }) => {

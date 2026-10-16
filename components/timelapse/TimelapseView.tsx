@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import { Camera, CalendarBlank } from 'phosphor-react-native';
@@ -52,6 +52,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
   // Frame on screen, written by the player on the UI thread and read by the scrubber
   // and filmstrip, so the controls match the picture exactly at any speed.
   const shownFrame = useSharedValue(0);
+  const [scrubbing, setScrubbing] = useState(false);
   const { settings, updateSettings } = useAppContext();
   // Hidden entirely when the native detector is missing (Expo Go / older dev client).
   const scanAvailable = isFaceScanAvailable();
@@ -96,6 +97,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
             onPlaybackEnd={handlePlaybackEnd}
             onPlayingChange={handlePlayingChange}
             shownFrame={shownFrame}
+            scrubbing={scrubbing}
           />
         </View>
 
@@ -107,6 +109,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
             startDate={filteredPhotos[0].date}
             endDate={filteredPhotos[filteredPhotos.length - 1].date}
             onSeek={handleSeek}
+            onScrubChange={setScrubbing}
             frame={shownFrame}
           />
           <Filmstrip

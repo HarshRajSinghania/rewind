@@ -13,6 +13,8 @@ interface ScrubberProps {
   startDate: string;
   endDate: string;
   onSeek: (index: number) => void;
+  /** Called with true when a drag starts and false when it ends. */
+  onScrubChange?: (scrubbing: boolean) => void;
   /** Frame on screen, driven by the player on the UI thread; follows it exactly when given. */
   frame?: SharedValue<number>;
 }
@@ -24,7 +26,7 @@ function formatShortDate(dateStr: string): string {
 
 const THUMB_SIZE = 14;
 
-function Scrubber({ currentIndex, total, startDate, endDate, onSeek, frame }: ScrubberProps) {
+function Scrubber({ currentIndex, total, startDate, endDate, onSeek, onScrubChange, frame }: ScrubberProps) {
   const { fonts } = useFont();
   const trackWidth = useSharedValue(0);
   const thumbX = useSharedValue(0);
@@ -48,9 +50,12 @@ function Scrubber({ currentIndex, total, startDate, endDate, onSeek, frame }: Sc
     return Math.round(ratio * (total - 1));
   }, [total]);
 
+  const reportScrub = useCallback((scrubbing: boolean) => onScrubChange?.(scrubbing), [onScrubChange]);
+
   const pan = Gesture.Pan()
     .onBegin((e) => {
       isDragging.value = true;
+      runOnJS(reportScrub)(true);
       const clamped = Math.min(Math.max(e.x, 0), trackWidth.value);
       thumbX.value = clamped;
       const idx = computeIndex(clamped, trackWidth.value);
@@ -67,6 +72,7 @@ function Scrubber({ currentIndex, total, startDate, endDate, onSeek, frame }: Sc
     })
     .onFinalize(() => {
       isDragging.value = false;
+      runOnJS(reportScrub)(false);
     })
     .minDistance(0);
 

@@ -37,6 +37,11 @@ interface TimelapsePlayerProps {
   onPlayingChange?: (playing: boolean) => void;
   /** Frame on screen, shared with the scrubber/filmstrip so they match it exactly. */
   shownFrame?: SharedValue<number>;
+  /**
+   * The scrubber is being dragged: decode only the frame under the finger. A full ring per
+   * seek queued ~20 decodes ahead of the one the user is looking at.
+   */
+  scrubbing?: boolean;
 }
 
 /**
@@ -47,7 +52,7 @@ interface TimelapsePlayerProps {
  */
 const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
   function TimelapsePlayer(
-    { photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd, onPlayingChange, shownFrame },
+    { photos, speed, align = false, scanProgress = null, onFrameChange, onPlaybackEnd, onPlayingChange, shownFrame, scrubbing = false },
     ref,
   ) {
     const { fonts } = useFont();
@@ -150,11 +155,13 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
 
     useImperativeHandle(ref, () => ({ seekTo: seek, pause: () => pause(false) }), [seek, pause]);
 
-    // Ring: the frame on screen plus the frames around the playhead.
+    // Ring: the frame on screen plus the frames around the playhead (just the playhead while
+    // scrubbing; a frame left behind unmounts, which cancels its decode).
     const ringFrames = useMemo(() => {
-      const list = [view.shown, ...ringWindow(view.frame, photos.length, RING_BEHIND, RING_AHEAD)];
+      const around = scrubbing ? [view.frame] : ringWindow(view.frame, photos.length, RING_BEHIND, RING_AHEAD);
+      const list = [view.shown, ...around];
       return list.filter((f, i) => f < photos.length && list.indexOf(f) === i);
-    }, [view, photos.length]);
+    }, [view, photos.length, scrubbing]);
     const ringIdsRef = useRef<ReadonlySet<string>>(new Set());
     ringIdsRef.current = new Set(ringFrames.map((f) => photos[f].id));
 

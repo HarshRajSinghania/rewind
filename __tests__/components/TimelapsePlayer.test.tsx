@@ -136,6 +136,27 @@ describe('TimelapsePlayer', () => {
     expect(shown().uri).toBe(uri(THREE[1]));
   });
 
+  it('while scrubbing, decodes only the frame on screen and the one under the finger', async () => {
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    await renderPlayer({ align: true, photos: FORTY, ref, scrubbing: true });
+    await act(async () => { ref.current!.seekTo(20); });
+    expect(frames().map((f) => f.uri)).toEqual([uri(FORTY[0]), uri(FORTY[20])]);
+  });
+
+  it('decodes the full ring around the target again once scrubbing ends', async () => {
+    const ref = React.createRef<TimelapsePlayerHandle>();
+    const tree = (scrubbing: boolean) => (
+      <FontProvider>
+        <TimelapsePlayer photos={FORTY} speed={1} align ref={ref} scrubbing={scrubbing} />
+      </FontProvider>
+    );
+    const { rerender } = await render(tree(true));
+    await act(async () => { ref.current!.seekTo(20); });
+    await rerender(tree(false));
+    expect(frames()).toHaveLength(1 + 1 + RING_AHEAD + RING_BEHIND);
+    expect(frames().map((f) => f.uri)).toContain(uri(FORTY[20 + RING_AHEAD]));
+  });
+
   it('makes a frame that left the ring load again before it is shown', async () => {
     const ref = React.createRef<TimelapsePlayerHandle>();
     await renderPlayer({ align: true, photos: FORTY, ref });
