@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { render, screen } from '@testing-library/react-native';
 import CalendarGrid from '@/components/timeline/CalendarGrid';
 import { FontProvider } from '@/context/FontContext';
@@ -39,5 +40,18 @@ describe('CalendarGrid', () => {
       </FontProvider>,
     );
     expect(screen.getByTestId('thumb:file:///document/2026-03-05.jpg').props.contentPosition).toEqual({ left: '50%', top: '40%' });
+  });
+
+  it("draws a missed day's border inside the cell, so it sizes like the photo next to it", async () => {
+    // Yoga floors a flex item's base size at its own border: with the border on the cell,
+    // a missed day came out 2dp wider (and, square, taller) than its neighbours.
+    await render(
+      <FontProvider>
+        <CalendarGrid year={2026} month={3} photos={[photo('2026-03-05')]} joinDate="2026-03-01" onDayPress={jest.fn()} onEmptyDayPress={jest.fn()} />
+      </FontProvider>,
+    );
+    const cell = StyleSheet.flatten(screen.getByTestId('missed-2026-03-04').props.style);
+    expect(cell.borderWidth ?? 0).toBe(0);
+    expect(StyleSheet.flatten(screen.getByTestId('missed-border-2026-03-04').props.style).borderWidth).toBe(1);
   });
 });

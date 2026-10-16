@@ -128,9 +128,11 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
               return (
                 <Pressable
                   key={date}
-                  style={({ pressed }) => [styles.cell, styles.emptyTappableCell, pressed && { opacity: 0.5 }]}
+                  testID={`missed-${date}`}
+                  style={({ pressed }) => [styles.cell, pressed && { opacity: 0.5 }]}
                   onPress={() => onEmptyDayPress(date)}
                 >
+                  <View testID={`missed-border-${date}`} style={styles.emptyTappableBorder} pointerEvents="none" />
                   <Text style={[styles.dayNumber, { fontFamily: fonts.regular }]}>
                     {parseInt(date.split('-')[2], 10)}
                   </Text>
@@ -204,7 +206,14 @@ const styles = StyleSheet.create({
   todayNumber: {
     color: Colors.streak,
   },
-  emptyTappableCell: {
+  // An overlay, not a border on the cell itself: Yoga floors a flex item's base size at its
+  // border, which made bordered cells 2dp bigger than their neighbours.
+  emptyTappableBorder: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     borderWidth: 1,
     borderColor: Colors.borderPrimary,
     // Dashed reads as "addable" but renders inconsistently on Android; keep it
