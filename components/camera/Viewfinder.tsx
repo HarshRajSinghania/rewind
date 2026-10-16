@@ -7,7 +7,7 @@ import { Colors } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
 import { shouldPropagateFaceUpdate } from '@/utils/alignment';
-import { previewMirroring, frameToView, uprightFrameSize } from '@/utils/cameraPreview';
+import { previewMirroring, frameToView, uprightFrameSize, mapContour } from '@/utils/cameraPreview';
 import GridOverlay from '@/components/camera/GridOverlay';
 import GhostOverlay from '@/components/camera/GhostOverlay';
 import FaceGuide from '@/components/camera/FaceGuide';
@@ -168,12 +168,7 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
       data.mouthLeftY = Y(data.mouthLeftY!);
       data.mouthRightX = X(data.mouthRightX!);
       data.mouthRightY = Y(data.mouthRightY!);
-      if (data.contour) {
-        for (let i = 0; i < data.contour.length; i += 2) {
-          data.contour[i] = X(data.contour[i]);
-          data.contour[i + 1] = Y(data.contour[i + 1]);
-        }
-      }
+      const contour = data.contour ? mapContour(data.contour, up, m) : null;
       const aspect = view.w > 0 ? view.h / view.w : 1;
       const eyes = data.hasEyes
         ? {
@@ -202,7 +197,7 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
       sv.yawAngle.value = data.yawAngle!;
       sv.hasFace.value = true;
 
-      if (data.contour) contourData.value = data.contour;
+      if (contour) contourData.value = contour;
 
       if (propagate) {
         onFaceState?.({

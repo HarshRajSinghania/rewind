@@ -67,3 +67,16 @@ export function uprightFrameSize(
   const sideways = orientation === 'landscape-left' || orientation === 'landscape-right';
   return sideways ? { w: height, h: width } : { w: width, h: height };
 }
+
+/**
+ * Detector contour px [x1, y1, x2, y2, …] → view-normalized coordinates, as a new array.
+ * Frame-processor results reach JS as read-only arrays, so never map them in place.
+ */
+export function mapContour(px: readonly number[], upright: { w: number; h: number }, m: FrameToView): number[] {
+  const out = new Array<number>(px.length);
+  for (let i = 0; i < px.length; i += 2) {
+    out[i] = m.x(px[i] / upright.w);
+    out[i + 1] = m.y(px[i + 1] / upright.h);
+  }
+  return out;
+}

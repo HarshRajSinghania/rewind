@@ -1,4 +1,4 @@
-import { previewMirroring, frameToView, uprightFrameSize } from '@/utils/cameraPreview';
+import { previewMirroring, frameToView, uprightFrameSize, mapContour } from '@/utils/cameraPreview';
 
 describe('previewMirroring', () => {
   it('leaves the native mirrored selfie preview alone when selfies are saved mirrored', () => {
@@ -55,5 +55,17 @@ describe('uprightFrameSize', () => {
   it('keeps an already upright buffer', () => {
     expect(uprightFrameSize(480, 640, 'portrait')).toEqual({ w: 480, h: 640 });
     expect(uprightFrameSize(480, 640, 'portrait-upside-down')).toEqual({ w: 480, h: 640 });
+  });
+});
+
+describe('mapContour', () => {
+  it('maps detector px into view coordinates without writing to the (read-only) input', () => {
+    // Frame-processor results arrive as read-only arrays: in-place writes were silently
+    // dropped, so the guide dots were drawn at raw px (hundreds of view widths off screen).
+    const raw = Object.freeze([240, 320, 480, 640]);
+    const m = frameToView({ w: 480, h: 640 }, { w: 360, h: 480 }, true);
+    const out = mapContour(raw, { w: 480, h: 640 }, m);
+    expect(out).toEqual([0.5, 0.5, 0, 1]);
+    expect(raw).toEqual([240, 320, 480, 640]);
   });
 });
