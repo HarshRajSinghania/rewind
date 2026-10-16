@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { StyleSheet, type StyleProp, type ImageStyle } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import { getImageSource } from '@/utils/imageSource';
+import { getImageSource, cachePolicyFor } from '@/utils/imageSource';
 import type { PhotoEntry } from '@/types';
 
 export interface FrameLayout {
@@ -32,6 +32,7 @@ export default function PlayerFrame({ photo, frameIndex, shown, layout, onLoaded
         source={getImageSource(photo.imageUri)}
         style={layout.style}
         contentFit={layout.contentFit}
+        cachePolicy={cachePolicyFor(photo.imageUri)}
         transition={0}
         // An error counts as loaded so one broken file can't freeze playback.
         onLoad={loaded}

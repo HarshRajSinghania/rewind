@@ -89,6 +89,13 @@ describe('TimelapsePlayer', () => {
     expect(f.transition).toBe(0);
   });
 
+  it('never writes local frames back to the disk cache', async () => {
+    // Glide re-encoded every decoded frame to disk at quality 100 (1-8/s during playback),
+    // starving decodes; the photos are already local files.
+    await renderPlayer({ align: true });
+    expect(frames().every((f) => f.image.props.cachePolicy === 'memory')).toBe(true);
+  });
+
   it('mounts the playhead and the frames after it, showing only the playhead', async () => {
     await renderPlayer({ align: true, photos: TWENTY });
     expect(frames().map((f) => f.uri)).toEqual(TWENTY.slice(0, 12).map(uri));

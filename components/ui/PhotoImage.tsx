@@ -3,6 +3,7 @@ import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { Image, type ImageProps } from 'expo-image';
 import { ImageBroken } from 'phosphor-react-native';
 import { Colors } from '@/constants/theme';
+import { cachePolicyFor } from '@/utils/imageSource';
 
 /**
  * expo-image with a broken-file fallback. Local photo files can be evicted or
@@ -10,7 +11,7 @@ import { Colors } from '@/constants/theme';
  * case. PhotoImage shows a placeholder tile + icon instead. Drop-in for Image:
  * it takes the same style/contentFit/source props and fills that box.
  */
-export default function PhotoImage({ style, onError, source, recyclingKey, ...rest }: ImageProps) {
+export default function PhotoImage({ style, onError, source, recyclingKey, cachePolicy, ...rest }: ImageProps) {
   const [failed, setFailed] = useState(false);
 
   // Reset the error state when the displayed photo changes (e.g. a recycled
@@ -21,6 +22,7 @@ export default function PhotoImage({ style, onError, source, recyclingKey, ...re
   useEffect(() => {
     setFailed(false);
   }, [srcKey]);
+  const srcUri = source && typeof source === 'object' && 'uri' in source ? (source as { uri?: string }).uri : undefined;
 
   return (
     <View style={[styles.wrap, style as StyleProp<ViewStyle>]}>
@@ -33,6 +35,7 @@ export default function PhotoImage({ style, onError, source, recyclingKey, ...re
           {...rest}
           source={source}
           recyclingKey={recyclingKey}
+          cachePolicy={cachePolicy ?? cachePolicyFor(srcUri)}
           style={StyleSheet.absoluteFill}
           onError={(e) => {
             setFailed(true);
