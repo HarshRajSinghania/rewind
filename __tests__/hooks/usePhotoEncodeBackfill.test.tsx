@@ -92,3 +92,17 @@ it('does nothing while disabled', async () => {
   await new Promise((r) => setTimeout(r, 20));
   expect(encode).not.toHaveBeenCalled();
 });
+
+it('stops reporting pending work once the only photo left has failed this session', async () => {
+  // The album screen waits for this before face scanning; a photo that can never be
+  // encoded must not hold the scan back forever.
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const photos = [makePhoto(0)];
+  fileStore.set(photos[0].imageUri, 'b2xk');
+  let fail!: () => void;
+  encode.mockImplementation(() => new Promise((_, reject) => { fail = () => reject(new Error('corrupt file')); }));
+  const { result } = await renderHook(() => usePhotoEncodeBackfill(photos, true));
+  expect(result.current.pending).toBe(true);
+  fail();
+  await waitFor(() => expect(result.current.pending).toBe(false));
+});

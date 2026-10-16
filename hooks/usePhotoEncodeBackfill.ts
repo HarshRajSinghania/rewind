@@ -10,9 +10,11 @@ export interface PhotoEncodeProgress {
   encoding: boolean;
   done: number;
   total: number;
+  /** Encoding is running or photos still wait for it this session (failures excluded, so it can't stick). */
+  pending: boolean;
 }
 
-const IDLE: PhotoEncodeProgress = { encoding: false, done: 0, total: 0 };
+const IDLE = { encoding: false, done: 0, total: 0 };
 
 function pendingEncodes(photos: PhotoEntry[], attempted: Set<string>): PhotoEntry[] {
   return photos.filter((p) => needsEncoding(p) && !attempted.has(p.id));
@@ -34,7 +36,9 @@ function deleteQuietly(uri: string) {
  */
 export function usePhotoEncodeBackfill(photos: PhotoEntry[], enabled: boolean): PhotoEncodeProgress {
   const { updatePhotos } = useAppContext();
-  const [progress, setProgress] = useState<PhotoEncodeProgress>(IDLE);
+  const [progress, setProgress] = useState<Omit<PhotoEncodeProgress, 'pending'>>(IDLE);
+  // Loops still running, including one finishing its last photo after a cleanup cancelled it.
+  const [running, setRunning] = useState(0);
   const photosRef = useRef(photos);
   photosRef.current = photos;
   // Ids tried this session: successes until their new entry arrives, failures so one bad
@@ -70,6 +74,7 @@ export function usePhotoEncodeBackfill(photos: PhotoEntry[], enabled: boolean): 
       return true;
     };
 
+    setRunning((n) => n + 1);
     (async () => {
       try {
         while (!cancelled) {
@@ -92,6 +97,7 @@ export function usePhotoEncodeBackfill(photos: PhotoEntry[], enabled: boolean): 
       } finally {
         await flush();
         if (!cancelled) setProgress(IDLE);
+        setRunning((n) => n - 1);
       }
     })();
 
@@ -101,5 +107,6 @@ export function usePhotoEncodeBackfill(photos: PhotoEntry[], enabled: boolean): 
     };
   }, [hasWork, updatePhotos]);
 
-  return progress;
+  // Waiting photos, or one still in flight (its file is about to be replaced).
+  return { ...progress, pending: hasWork || running > 0 };
 }

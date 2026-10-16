@@ -22,7 +22,6 @@ import { useAlbumLock } from '@/hooks/useAlbumLock';
 import { usePhotoEncodeBackfill } from '@/hooks/usePhotoEncodeBackfill';
 import { useFaceScanBackfill } from '@/hooks/useFaceScanBackfill';
 import { isFaceScanAvailable } from '@/utils/faceScan';
-import { needsEncoding } from '@/utils/photoEncode';
 import { buildFaceTrend, photoReadout } from '@/utils/faceTrend';
 import FaceTrendCard from '@/components/face/FaceTrendCard';
 import type { PhotoEntry } from '@/types';
@@ -51,12 +50,11 @@ export default function AlbumDetailScreen() {
   const focused = useIsFocused();
   // Store photos as q95 (fresh captures and imports land here right after saving). Only
   // while this screen is in front, so playback and the camera get the CPU.
-  usePhotoEncodeBackfill(photos, focused && !locked);
+  const encode = usePhotoEncodeBackfill(photos, focused && !locked);
   // Face measurements for the trend card. Waits for the q95 pass: a scan reading a file the
   // encoder has just replaced would fail for this session.
   const faceAvailable = isFaceScanAvailable();
-  const encodePending = photos.some(needsEncoding);
-  const faceProgress = useFaceScanBackfill(photos, faceAvailable && focused && !locked && !encodePending);
+  const faceProgress = useFaceScanBackfill(photos, faceAvailable && focused && !locked && !encode.pending);
   const faceTrend = useMemo(() => (faceAvailable ? buildFaceTrend(photos) : null), [faceAvailable, photos]);
   const [showPinModal, setShowPinModal] = useState(false);
 
