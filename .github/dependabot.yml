@@ -8,3 +8,9 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+    ignore:
+      # v6 moved setup-gradle's caching into a proprietary component under Gradle's Terms of
+      # Use (https://blog.gradle.org/github-actions-for-gradle-v6). Stay on v5 (MIT) unless
+      # that's accepted.
+      - dependency-name: gradle/actions
+        update-types: [version-update:semver-major]

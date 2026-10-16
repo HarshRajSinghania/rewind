@@ -109,6 +109,10 @@ Dependabot only updates GitHub Actions.
 | `eas-build` | version tags `v*` (production), or by hand | EAS cloud builds |
 | `release` | version tags `v*` | GitHub Release with generated notes |
 
+Third-party actions are pinned to a commit SHA with the version in a trailing comment;
+GitHub's own `actions/*` use major tags. Dependabot updates both. `gradle/actions` stays on v5
+because v6 puts its caching under Gradle's Terms of Use.
+
 The EAS workflows need a one-time setup and skip themselves until it's done:
 
 1. `bunx eas-cli init` to link the project (fills in the project id and updates URL in
