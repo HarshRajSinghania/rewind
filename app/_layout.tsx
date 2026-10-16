@@ -50,26 +50,28 @@ export default function RootLayout() {
 
   if (!fontsLoaded) return null;
 
+  // The boundary wraps the providers too: an error in one (e.g. loading app data) used to
+  // unmount the whole tree and leave a blank screen.
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AppProvider>
-          <FontProvider>
-            <ErrorBoundary>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <AppProvider>
+            <FontProvider>
               <StatusBar style="light" />
               <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: Colors.bgPage },
-                animation: 'fade_from_bottom',
-                gestureEnabled: true,
-                navigationBarColor: Colors.bgPage,
-              }}
-            />
-            </ErrorBoundary>
-          </FontProvider>
-        </AppProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: Colors.bgPage },
+                  animation: 'fade_from_bottom',
+                  gestureEnabled: true,
+                  navigationBarColor: Colors.bgPage,
+                }}
+              />
+            </FontProvider>
+          </AppProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
