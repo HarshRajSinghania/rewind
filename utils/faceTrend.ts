@@ -135,12 +135,20 @@ export function faceHeadline(t: FaceTrend): string | null {
   const pts = t.points.filter((p) => p.trend !== null);
   if (pts.length < 2) return null;
   const last = pts[pts.length - 1];
-  const sixMonths = last.day - pts[0].day >= SIX_MONTHS;
-  const ref = sixMonths ? pts.find((p) => p.day >= last.day - SIX_MONTHS)! : pts[0];
+  // The latest trend point at or before 6 months ago (else the first one); it's only
+  // "6 months ago" when it's within half a window of that date — a gap names the real date.
+  const target = last.day - SIX_MONTHS;
+  let ref = pts[0];
+  for (const p of pts) {
+    if (p.day > target) break;
+    ref = p;
+  }
+  const sixMonthsAgo = Math.abs(ref.day - target) <= HALF_WINDOW;
   const pct = (last.trend! / ref.trend! - 1) * 100;
-  const since = sixMonths ? 'than 6 months ago' : `since ${monthDay(ref.date)}`;
-  if (Math.abs(pct) < 1) return `lower face about the same ${since}`;
-  return `lower face ${pctText(pct, 'fuller', 'thinner')} ${since}`;
+  if (Math.abs(pct) < 1) {
+    return sixMonthsAgo ? 'lower face about the same as 6 months ago' : `lower face about the same since ${monthDay(ref.date)}`;
+  }
+  return `lower face ${pctText(pct, 'fuller', 'thinner')} ${sixMonthsAgo ? 'than 6 months ago' : `since ${monthDay(ref.date)}`}`;
 }
 
 export function photoReadout(t: FaceTrend | null, photo: TrendPhoto): string | null {

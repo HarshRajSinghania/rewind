@@ -80,6 +80,14 @@ describe('faceHeadline', () => {
     const t = buildFaceTrend(album(100, { index: (d) => (d < 50 ? 1.75 : 1.75 * 1.03) }))!;
     expect(faceHeadline(t)).toBe('lower face 3% fuller since jan 1');
   });
+  it('names the real reference date when a gap spans "6 months ago"', () => {
+    // Photos on days 0-60 and 300-400: the nearest trend before "6 months ago" (day 218) is day 60.
+    const photos = [...album(61), ...album(401, { index: () => 1.75 * 0.96 }).slice(300)];
+    expect(faceHeadline(buildFaceTrend(photos)!)).toBe('lower face 4% thinner since mar 2');
+  });
+  it('says about the same as 6 months ago for a stable face', () => {
+    expect(faceHeadline(buildFaceTrend(album(400))!)).toBe('lower face about the same as 6 months ago');
+  });
   it('says about the same under 1%', () => {
     expect(faceHeadline(buildFaceTrend(album(100))!)).toBe('lower face about the same since jan 1');
   });
