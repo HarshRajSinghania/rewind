@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
 import { getToday, getWeekDays } from '@/utils/dates';
-import { computeCurrentStreak, computeBestStreak, computeConsistency, computeDayStatus } from '@/utils/streak';
+import { computeCurrentStreak, computeBestStreak, computeConsistency, computeDayStatus, trackingStartDate } from '@/utils/streak';
 import type { DayStatus, WeekDay } from '@/types';
 
 export function useStreak(albumId?: string, albumCreatedAt?: string) {
@@ -17,7 +17,10 @@ export function useStreak(albumId?: string, albumCreatedAt?: string) {
     [filteredPhotos]
   );
 
-  const referenceDate = (albumCreatedAt?.split('T')[0]) ?? profile.joinDate;
+  const referenceDate = useMemo(
+    () => trackingStartDate(albumCreatedAt, profile.joinDate, photoDates),
+    [albumCreatedAt, profile.joinDate, photoDates],
+  );
 
   const currentStreak = useMemo(() => {
     return computeCurrentStreak(photoDates, getToday(), referenceDate);
@@ -34,14 +37,11 @@ export function useStreak(albumId?: string, albumCreatedAt?: string) {
   const weekStatus = useMemo((): WeekDay[] => {
     const today = getToday();
     const weekDays = getWeekDays(today);
-    // Use albumCreatedAt for disabled check if provided
-    const startDate = albumCreatedAt ?? profile.joinDate;
-
     return weekDays.map(wd => {
-      const status: DayStatus = computeDayStatus(wd.date, today, startDate, photoDates);
+      const status: DayStatus = computeDayStatus(wd.date, today, referenceDate, photoDates);
       return { ...wd, status };
     });
-  }, [photoDates, profile.joinDate, albumCreatedAt]);
+  }, [photoDates, referenceDate]);
 
   return { currentStreak, bestStreak, consistency, weekStatus };
 }

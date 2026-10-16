@@ -15,6 +15,7 @@ import PinModal from '@/components/ui/PinModal';
 import { Colors, Fonts } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
 import { usePhotos } from '@/hooks/usePhotos';
+import { trackingStartDate } from '@/utils/streak';
 import { useStreak } from '@/hooks/useStreak';
 import { useAppContext } from '@/context/AppContext';
 import { useAlbumLock } from '@/hooks/useAlbumLock';
@@ -72,32 +73,29 @@ export default function AlbumDetailScreen() {
   }));
 
   const monthPhotos = getPhotosByMonth(currentMonth.year, currentMonth.month);
-  // A2: captured = distinct dates within [albumJoinDate, today]
+  // A2: captured = distinct dates within [album start, today]
   const captured = new Set(monthPhotos.map(p => p.date)).size;
   const today = new Date();
   const daysInMonth = new Date(currentMonth.year, currentMonth.month, 0).getDate();
-  // A2: daysPassed starts from the later of (first-of-month, album join date)
-  const albumJoinDate = album?.createdAt ? new Date(album.createdAt) : null;
-  const albumJoinYear = albumJoinDate ? albumJoinDate.getFullYear() : 0;
-  const albumJoinMonth = albumJoinDate ? albumJoinDate.getMonth() + 1 : 0;
-  const albumJoinDay = albumJoinDate ? albumJoinDate.getDate() : 1;
+  // The album's history starts at its earliest photo when imports predate its creation.
+  // Split the string (not new Date(...)) so a UTC parse can't shift the day.
+  const startDate = trackingStartDate(album?.createdAt, profile.joinDate, photos.map(p => p.date));
+  const [startYear, startMonth, startDayOfMonth] = startDate.split('-').map(Number);
   const isCurrentMonth = currentMonth.year === today.getFullYear() && currentMonth.month === today.getMonth() + 1;
   const isPastMonth = currentMonth.year < today.getFullYear() || (currentMonth.year === today.getFullYear() && currentMonth.month < today.getMonth() + 1);
   const rawDaysPassed = isCurrentMonth ? today.getDate() : isPastMonth ? daysInMonth : 0;
-  // If the album joined mid-month, clamp the start of counting to the join day
-  const isAlbumJoinMonth = albumJoinYear === currentMonth.year && albumJoinMonth === currentMonth.month;
-  const startDay = isAlbumJoinMonth ? albumJoinDay : 1;
+  // A2: daysPassed starts from the later of (first-of-month, album start)
+  const isStartMonth = startYear === currentMonth.year && startMonth === currentMonth.month;
+  const startDay = isStartMonth ? startDayOfMonth : 1;
   const daysPassed = Math.max(0, rawDaysPassed - (startDay - 1));
   const missed = Math.max(0, daysPassed - captured);
 
   const now = new Date();
-  const joinYear = new Date(profile.joinDate).getFullYear();
-  const joinMonth = new Date(profile.joinDate).getMonth() + 1;
 
   function handlePrevMonth() {
     setCurrentMonth(prev => {
       const prevTotal = prev.year * 12 + prev.month;
-      const minTotal = joinYear * 12 + joinMonth;
+      const minTotal = startYear * 12 + startMonth;
       if (prevTotal <= minTotal) return prev;
       if (prev.month === 1) return { year: prev.year - 1, month: 12 };
       return { year: prev.year, month: prev.month - 1 };
@@ -268,15 +266,15 @@ export default function AlbumDetailScreen() {
             onNext={handleNextMonth}
             onTitlePress={toggleMonthPicker}
             disableNext={currentMonth.year * 12 + currentMonth.month >= now.getFullYear() * 12 + (now.getMonth() + 1)}
-            disablePrev={currentMonth.year * 12 + currentMonth.month <= joinYear * 12 + joinMonth}
+            disablePrev={currentMonth.year * 12 + currentMonth.month <= startYear * 12 + startMonth}
           />
           <Animated.View style={monthPickerAnimatedStyle}>
             <MonthPicker
               year={currentMonth.year}
               month={currentMonth.month}
               onChange={(year, month) => setCurrentMonth({ year, month })}
-              minYear={joinYear}
-              minMonth={joinMonth}
+              minYear={startYear}
+              minMonth={startMonth}
               maxYear={now.getFullYear()}
               maxMonth={now.getMonth() + 1}
             />
@@ -286,7 +284,7 @@ export default function AlbumDetailScreen() {
             year={currentMonth.year}
             month={currentMonth.month}
             photos={photos}
-            joinDate={album?.createdAt ? album.createdAt.split('T')[0] : profile.joinDate}
+            joinDate={startDate}
             onDayPress={handleDayPress}
             onEmptyDayPress={handleEmptyDayPress}
           />
@@ -326,7 +324,7 @@ export default function AlbumDetailScreen() {
         visible={modalVisible}
         photos={monthPhotos}
         initialIndex={selectedPhotoIndex}
-        joinDate={profile.joinDate}
+        joinDate={startDate}
         onClose={() => setModalVisible(false)}
         onDelete={(id) => { deletePhoto(id); if (monthPhotos.length <= 1) setModalVisible(false); }}
         onUpdateCaption={(id, caption) => updatePhoto(id, { caption })}

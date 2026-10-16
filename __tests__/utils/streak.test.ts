@@ -3,6 +3,7 @@ import {
   computeBestStreak,
   computeConsistency,
   computeDayStatus,
+  trackingStartDate,
 } from '@/utils/streak';
 
 const TODAY = '2026-03-10';
@@ -93,5 +94,21 @@ describe('computeDayStatus', () => {
   it('marks past days captured/missed', () => {
     expect(computeDayStatus('2026-03-08', TODAY, '2026-03-01', dates)).toBe('captured');
     expect(computeDayStatus('2026-03-09', TODAY, '2026-03-01', dates)).toBe('missed');
+  });
+});
+
+describe('trackingStartDate', () => {
+  it('starts at the earliest photo when photos predate the album (imports, backfill)', () => {
+    expect(trackingStartDate('2026-10-15T18:00:00.000Z', '2026-10-15', ['2026-10-14', '2025-04-23', '2026-01-02']))
+      .toBe('2025-04-23');
+  });
+
+  it('starts at the album creation day otherwise, as a plain date', () => {
+    // A full ISO timestamp would sort after "2026-10-15" and mark today as before the start.
+    expect(trackingStartDate('2026-10-15T18:00:00.000Z', '2026-01-01', ['2026-10-15'])).toBe('2026-10-15');
+  });
+
+  it('falls back to the profile join date without an album', () => {
+    expect(trackingStartDate(undefined, '2026-03-01', [])).toBe('2026-03-01');
   });
 });
