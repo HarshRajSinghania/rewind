@@ -7,7 +7,7 @@ import { exportToBackup, exportToPhotoAlbum, shareFile } from '@/utils/export';
 import { importFromBackup, createPhotoEntry, pickPhotosFromLibrary } from '@/utils/import';
 import { getToday } from '@/utils/dates';
 import type { PhotoEntry } from '@/types';
-import { fileStore, resetFileSystemMock } from '../helpers/fileSystemMock';
+import { fileStore, deletedUris, openedHandles, base64Reads, resetFileSystemMock } from '../helpers/fileSystemMock';
 
 jest.mock('expo-file-system', () => require('../helpers/fileSystemMock').expoFileSystemMock);
 
@@ -161,6 +161,37 @@ describe('importFromBackup', () => {
     expect(photos.every((p) => p.albumId === 'album-1')).toBe(true);
     // Progress counts processed entries (the missing image is skipped silently)
     expect(progress[progress.length - 1]).toEqual([2, 3]);
+  });
+
+  it('streams the backup through a file handle instead of loading it whole', async () => {
+    // The old path base64'd the entire backup into one JS string; a year of photos
+    // (1.3 GB) cannot survive that. Reads must stay around one photo in size.
+    const photo = () => Buffer.from(Array.from({ length: 60_000 }, (_, i) => (i * 31 + 7) & 0xff)).toString('base64');
+    const uri = await seedBackupZip(
+      {
+        photos: [1, 2, 3].map((d) => ({ id: `p${d}`, date: `2026-03-0${d}`, caption: '', imageFile: `images/${d}.jpg` })),
+      },
+      { 'images/1.jpg': photo(), 'images/2.jpg': photo(), 'images/3.jpg': photo() },
+    );
+    const backupSize = Buffer.from(fileStore.get(uri)!, 'base64').length;
+
+    const photos = await importFromBackup('album-1');
+
+    expect(photos).toHaveLength(3);
+    expect(base64Reads).not.toContain(uri);
+    const handle = openedHandles.find((h) => h.uri === uri)!;
+    expect(Math.max(...handle.reads)).toBeLessThan(backupSize / 2);
+    expect(handle.closed).toBe(true);
+  });
+
+  it('writes each photo byte-for-byte and removes the picked cache copy', async () => {
+    const uri = await seedBackupZip(
+      { photos: [{ id: 'p1', date: '2026-03-01', caption: '', imageFile: 'images/a.jpg' }] },
+      { 'images/a.jpg': 'QUJD' },
+    );
+    const [entry] = await importFromBackup('album-1');
+    expect(fileStore.get(entry.imageUri)).toBe('QUJD');
+    expect(deletedUris).toContain(uri);
   });
 
   it('returns [] when the picker is cancelled', async () => {
