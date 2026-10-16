@@ -67,3 +67,26 @@ describe('useTimelapse', () => {
     expect(result.current.rangeEnd).toBe('');
   });
 });
+
+describe('useTimelapse playback state', () => {
+  it('moves the filmstrip at most every 500ms while playing, exactly otherwise', async () => {
+    const now = jest.spyOn(Date, 'now');
+    const { result } = await renderHook(() => useTimelapse({ photos }));
+    await act(async () => { result.current.handlePlayingChange(true); });
+    now.mockReturnValue(10_000);
+    await act(async () => { result.current.handleFrameChange(1); });
+    now.mockReturnValue(10_100);
+    await act(async () => { result.current.handleFrameChange(2); });
+    expect(result.current.isPlaying).toBe(true);
+    expect(result.current.displayIndex).toBe(2);
+    expect(result.current.filmstripIndex).toBe(1);
+
+    await act(async () => {
+      result.current.handlePlayingChange(false);
+      result.current.handlePlaybackEnd(2);
+    });
+    expect(result.current.isPlaying).toBe(false);
+    expect(result.current.filmstripIndex).toBe(2);
+    now.mockRestore();
+  });
+});
