@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { CaretLeft } from 'phosphor-react-native';
 import { Colors, Fonts } from '@/constants/theme';
@@ -20,6 +20,10 @@ export default function AlbumTimelapseScreen() {
   const albumName = album?.name ?? albumId ?? 'album';
 
   const { fonts } = useFont();
+  // Insets from the provider, known from the first frame. The native SafeAreaView only got
+  // them after the slide-in animation, so the header and player jumped ~40dp once on open.
+  const insets = useSafeAreaInsets();
+  const safe = { paddingTop: insets.top, paddingBottom: insets.bottom };
   const { photos } = usePhotos(albumId);
   const timelapse = useTimelapse({ photos });
 
@@ -33,7 +37,7 @@ export default function AlbumTimelapseScreen() {
       ? 'No photos in this date range — try a wider range'
       : 'Take more photos to create your timelapse';
     return (
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <View testID="timelapse-screen-root" style={[styles.safeArea, safe]}>
         <Stack.Screen options={{ headerShown: false, animation: 'slide_from_bottom' }} />
         <View style={styles.header}>
           <Pressable
@@ -61,7 +65,7 @@ export default function AlbumTimelapseScreen() {
           onApply={timelapse.handleDateRangeApply}
           onClose={() => timelapse.setShowDateRange(false)}
         />
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -85,9 +89,9 @@ export default function AlbumTimelapseScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+    <View testID="timelapse-screen-root" style={[styles.safeArea, safe]}>
       <TimelapseView header={header} timelapse={timelapse} speedSelectorStyle={{ paddingBottom: 8 }} />
-    </SafeAreaView>
+    </View>
   );
 }
 
