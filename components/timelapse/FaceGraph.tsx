@@ -17,15 +17,16 @@ interface FaceGraphProps {
 }
 
 /** Face width trend across the playing frames, with a dot on the frame on screen (UI thread). */
-export default function FaceGraph({ trendPhotos, framePhotos, frame }: FaceGraphProps) {
+function FaceGraph({ trendPhotos, framePhotos, frame }: FaceGraphProps) {
   const [width, setWidth] = useState(0);
   const values = useMemo(() => {
     const t = buildFaceTrend(trendPhotos);
     return t ? framePhotos.map((p) => trendAt(t, p.date)) : [];
   }, [trendPhotos, framePhotos]);
-  const known = values.filter((v): v is number => v !== null);
-
-  const { xs, ys, path } = useMemo(() => {
+  // Stable while the timelapse re-renders around it (~10x/s while playing): the worklet below
+  // captures xs/ys, and new arrays would restart its UI-thread mapper every time.
+  const { xs, ys, path, drawable } = useMemo(() => {
+    const known = values.filter((v): v is number => v !== null);
     const n = values.length;
     const lo = Math.min(...known);
     const hi = Math.max(...known);
@@ -39,8 +40,8 @@ export default function FaceGraph({ trendPhotos, framePhotos, frame }: FaceGraph
       path += `${open ? 'L' : 'M'}${xs[i].toFixed(1)},${ys[i].toFixed(1)}`;
       open = true;
     });
-    return { xs, ys, path };
-  }, [values, known, width]);
+    return { xs, ys, path, drawable: known.length >= 2 };
+  }, [values, width]);
 
   const dotStyle = useAnimatedStyle(() => {
     const i = Math.min(Math.max(frame.value, 0), xs.length - 1);
@@ -51,7 +52,7 @@ export default function FaceGraph({ trendPhotos, framePhotos, frame }: FaceGraph
     };
   });
 
-  if (known.length < 2) return null;
+  if (!drawable) return null;
   return (
     <View testID="face-graph" style={styles.wrap} onLayout={(e) => setWidth(e.nativeEvent.layout.width)} pointerEvents="none">
       {width > 0 ? (
@@ -63,6 +64,8 @@ export default function FaceGraph({ trendPhotos, framePhotos, frame }: FaceGraph
     </View>
   );
 }
+
+export default React.memo(FaceGraph);
 
 const styles = StyleSheet.create({
   wrap: { height: HEIGHT },

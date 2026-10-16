@@ -28,3 +28,18 @@ it('hides when the frames in range have no trend', async () => {
   await render(<FaceGraph trendPhotos={album} framePhotos={far} frame={{ value: 0 } as never} />);
   expect(screen.queryByTestId('face-graph')).toBeNull();
 });
+
+it('does not redraw while the timelapse re-renders around it with the same photos', async () => {
+  // TimelapseView re-renders ~10x/s while playing; the graph must not rebuild each time.
+  const svg = jest.requireMock('react-native-svg') as { Path: (p: object) => unknown };
+  const renders = jest.fn();
+  const original = svg.Path;
+  svg.Path = (p: object) => { renders(); return (original as (p: object) => unknown)(p); };
+  const frame = { value: 0 } as never;
+  const { rerender } = await render(<FaceGraph trendPhotos={album} framePhotos={album} frame={frame} />);
+  await fireEvent(screen.getByTestId('face-graph'), 'layout', { nativeEvent: { layout: { width: 300, height: 24 } } });
+  const afterLayout = renders.mock.calls.length;
+  await rerender(<FaceGraph trendPhotos={album} framePhotos={album} frame={frame} />);
+  expect(renders.mock.calls.length).toBe(afterLayout);
+  svg.Path = original;
+});
