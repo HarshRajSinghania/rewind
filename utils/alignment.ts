@@ -4,6 +4,7 @@
  *
  * Coordinates are normalized 0..1 in preview space. Angles in degrees.
  */
+import type { EyeTarget } from '@/utils/ghost';
 
 export interface AlignmentTarget {
   x: number;
@@ -20,13 +21,43 @@ export interface AlignmentFace {
   faceHeight: number;
   yawAngle: number;
   rollAngle: number;
+  /** Eye midpoint and distance (a fraction of the view width), when the detector saw both eyes. */
+  eyeMidX?: number;
+  eyeMidY?: number;
+  eyeDist?: number;
+}
+
+/** Eye distance ratio (smaller / larger) below which a face doesn't count as aligned. */
+const MIN_EYE_DIST_RATIO = 0.8;
+
+function isEyeTarget(target: AlignmentTarget | EyeTarget | null): target is EyeTarget {
+  return !!target && 'dist' in target;
+}
+
+function angleScores(face: AlignmentFace): number {
+  const yawScore = Math.max(0, 1 - Math.abs(face.yawAngle) / 45);
+  const rollScore = Math.max(0, 1 - Math.abs(face.rollAngle) / 30);
+  return yawScore * 0.20 + rollScore * 0.15;
+}
+
+/** Eyes against the ghost's eyes: position first, then eye distance (how far from the camera). */
+function eyeScore(face: AlignmentFace, target: EyeTarget): number {
+  if (face.eyeMidX === undefined || face.eyeMidY === undefined || !(face.eyeDist! > 0)) return 0;
+  const dist = Math.hypot(face.eyeMidX - target.x, face.eyeMidY - target.y);
+  const positionScore = Math.max(0, 1 - dist * 4);
+  if (positionScore < 0.1) return 0;
+  const ratio = Math.min(face.eyeDist! / target.dist, target.dist / face.eyeDist!);
+  if (ratio < MIN_EYE_DIST_RATIO) return 0;
+  const sizeScore = (ratio - MIN_EYE_DIST_RATIO) / (1 - MIN_EYE_DIST_RATIO);
+  return positionScore * 0.45 + sizeScore * 0.20 + angleScores(face);
 }
 
 export function computeAlignmentScore(
   face: AlignmentFace,
-  alignmentTarget: AlignmentTarget | null,
+  alignmentTarget: AlignmentTarget | EyeTarget | null,
 ): number {
   if (!face.hasFace) return 0;
+  if (isEyeTarget(alignmentTarget)) return eyeScore(face, alignmentTarget);
 
   let targetCX = 0.5;
   let targetCY = 0.5;
@@ -57,10 +88,28 @@ export function computeAlignmentScore(
   const areaRatio = targetArea > 0 ? Math.min(area / targetArea, targetArea / area) : 0;
   const sizeScore = areaRatio;
 
-  const yawScore = Math.max(0, 1 - Math.abs(face.yawAngle) / 45);
-  const rollScore = Math.max(0, 1 - Math.abs(face.rollAngle) / 30);
+  return positionScore * 0.45 + sizeScore * 0.20 + angleScores(face);
+}
 
-  return positionScore * 0.45 + sizeScore * 0.20 + yawScore * 0.20 + rollScore * 0.15;
+/** The camera screen's one-line face status. */
+export function alignmentStatus({ silent, face, score, threshold, target }: {
+  silent: boolean;
+  face: AlignmentFace;
+  score: number;
+  threshold: number;
+  target: AlignmentTarget | EyeTarget | null;
+}): string {
+  if (silent) return 'face detection stalled';
+  if (!face.hasFace) return 'no face detected';
+  if (score >= threshold) return 'aligned';
+  if (score >= threshold - 0.15) return 'hold still';
+  if (isEyeTarget(target) && face.eyeDist! > 0) {
+    if (face.eyeDist! / target.dist < MIN_EYE_DIST_RATIO) return 'move closer';
+    if (target.dist / face.eyeDist! < MIN_EYE_DIST_RATIO) return 'move back';
+  } else if (face.faceWidth * face.faceHeight < 0.04) {
+    return 'move closer';
+  }
+  return 'center your face';
 }
 
 /**

@@ -1,17 +1,19 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, Linking, type LayoutChangeEvent } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor, type Orientation } from 'react-native-vision-camera';
 import { useSharedValue } from 'react-native-reanimated';
 import { useRunOnJS, useSharedValue as useWorkletsSharedValue } from 'react-native-worklets-core';
 import { Colors } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
 import { shouldPropagateFaceUpdate } from '@/utils/alignment';
+import { previewMirroring, frameToView, uprightFrameSize } from '@/utils/cameraPreview';
 import GridOverlay from '@/components/camera/GridOverlay';
 import GhostOverlay from '@/components/camera/GhostOverlay';
 import FaceGuide from '@/components/camera/FaceGuide';
 import FaceDebugOverlay from '@/components/camera/FaceDebugOverlay';
 import type { FaceLandmarks } from '@/types';
+import type { GhostPlacement } from '@/utils/ghost';
 
 export interface FaceState {
   hasFace: boolean;
@@ -21,11 +23,16 @@ export interface FaceState {
   faceHeight: number;
   yawAngle: number;
   rollAngle: number;
+  /** Eye midpoint and distance (a fraction of the view width), when both eyes were found. */
+  eyeMidX?: number;
+  eyeMidY?: number;
+  eyeDist?: number;
 }
 
 interface ViewfinderProps {
   ghostImageUri: string | null;
-  ghostLandmarks?: FaceLandmarks | null;
+  ghostPlacement: GhostPlacement | null;
+  ghostFlip: boolean;
   facing: 'front' | 'back';
   ghostOpacity: number;
   onGhostOpacityChange: (value: number) => void;
@@ -44,7 +51,7 @@ export interface ViewfinderRef {
 }
 
 const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
-  ({ ghostImageUri, ghostLandmarks, facing, ghostOpacity, onGhostOpacityChange, isMirrored, showFaceGuide, onFaceState, onAvailabilityChange, onSilence, showDebug = false, photoQuality = 'medium' }, ref) => {
+  ({ ghostImageUri, ghostPlacement, ghostFlip, facing, ghostOpacity, onGhostOpacityChange, isMirrored, showFaceGuide, onFaceState, onAvailabilityChange, onSilence, showDebug = false, photoQuality = 'medium' }, ref) => {
     const { typography } = useFont();
     const { hasPermission, requestPermission } = useCameraPermission();
     const device = useCameraDevice(facing);
@@ -52,6 +59,8 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
     const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastPropagatedAtRef = useRef(0);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+    // The same size for the face callback, which shouldn't be re-created on layout.
+    const viewSizeRef = useRef({ w: 0, h: 0 });
     const contourData = useSharedValue<number[]>([]);
     // Worklets-runtime counter for frame skipping (see frameProcessor below).
     // Must use worklets-core's shared value — the frame processor runs on the
@@ -91,7 +100,7 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
     // Energy note: shared values (FaceGuide dots) update every frame, but React
     // state propagation is throttled via shouldPropagateFaceUpdate — a camera
     // screen re-render costs far more than a native MLKit pass.
-    const previewFlipped = facing === 'front' && isMirrored;
+    const { flipPreview, shownMirrored } = previewMirroring(facing, isMirrored);
     const onFaceResult = useRunOnJS((data: {
       hasFace: boolean;
       faceX?: number; faceY?: number;
@@ -102,6 +111,9 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
       mouthLeftX?: number; mouthLeftY?: number;
       mouthRightX?: number; mouthRightY?: number;
       rollAngle?: number; yawAngle?: number;
+      hasEyes?: boolean;
+      frameW?: number; frameH?: number;
+      orientation?: Orientation;
       contour?: number[];
     }) => {
       const prevHasFace = sharedValues.hasFace.value;
@@ -133,19 +145,43 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
       }
       onSilence?.(false);
 
-      if (previewFlipped) {
-        data.faceX = 1 - data.faceX! - data.faceWidth!;
-        data.leftEyeX = 1 - data.leftEyeX!;
-        data.rightEyeX = 1 - data.rightEyeX!;
-        data.noseX = 1 - data.noseX!;
-        data.mouthLeftX = 1 - data.mouthLeftX!;
-        data.mouthRightX = 1 - data.mouthRightX!;
-        if (data.contour) {
-          for (let i = 0; i < data.contour.length; i += 2) {
-            data.contour[i] = 1 - data.contour[i];
-          }
+      // Detector px are in the upright, unmirrored camera frame. The preview shows that
+      // frame center-cropped to this view's shape, mirrored for selfies.
+      const view = viewSizeRef.current;
+      const up = uprightFrameSize(data.frameW || 1, data.frameH || 1, data.orientation ?? 'portrait');
+      const m = frameToView(up, view, shownMirrored);
+      const X = (px: number) => m.x(px / up.w);
+      const Y = (px: number) => m.y(px / up.h);
+      const boxX0 = X(data.faceX!);
+      const boxX1 = X(data.faceX! + data.faceWidth!);
+      data.faceX = Math.min(boxX0, boxX1);
+      data.faceWidth = Math.abs(boxX1 - boxX0);
+      data.faceY = Y(data.faceY!);
+      data.faceHeight = (data.faceHeight! / up.h) * m.scaleY;
+      data.leftEyeX = X(data.leftEyeX!);
+      data.leftEyeY = Y(data.leftEyeY!);
+      data.rightEyeX = X(data.rightEyeX!);
+      data.rightEyeY = Y(data.rightEyeY!);
+      data.noseX = X(data.noseX!);
+      data.noseY = Y(data.noseY!);
+      data.mouthLeftX = X(data.mouthLeftX!);
+      data.mouthLeftY = Y(data.mouthLeftY!);
+      data.mouthRightX = X(data.mouthRightX!);
+      data.mouthRightY = Y(data.mouthRightY!);
+      if (data.contour) {
+        for (let i = 0; i < data.contour.length; i += 2) {
+          data.contour[i] = X(data.contour[i]);
+          data.contour[i + 1] = Y(data.contour[i + 1]);
         }
       }
+      const aspect = view.w > 0 ? view.h / view.w : 1;
+      const eyes = data.hasEyes
+        ? {
+            eyeMidX: (data.leftEyeX + data.rightEyeX) / 2,
+            eyeMidY: (data.leftEyeY + data.rightEyeY) / 2,
+            eyeDist: Math.hypot(data.rightEyeX - data.leftEyeX, (data.rightEyeY - data.leftEyeY) * aspect),
+          }
+        : {};
 
       const sv = sharedValues;
       sv.faceX.value = data.faceX!;
@@ -177,9 +213,10 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
           faceHeight: data.faceHeight!,
           yawAngle: data.yawAngle!,
           rollAngle: data.rollAngle!,
+          ...eyes,
         });
       }
-    }, [sharedValues, previewFlipped, contourData, onFaceState]);
+    }, [sharedValues, shownMirrored, contourData, onFaceState]);
 
     const frameProcessor = useFrameProcessor(
       (frame) => {
@@ -211,32 +248,30 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
             return;
           }
 
-          const frameW = frame.width || 1;
-          const frameH = frame.height || 1;
+          // Raw detector px, mapped onto the preview on the JS side (onFaceResult).
           const lm = largest.landmarks;
-
-          const isSensorLandscape = frame.orientation === 'portrait' || frame.orientation === 'portrait-upside-down';
-          const normW = isSensorLandscape ? frameH : frameW;
-          const normH = isSensorLandscape ? frameW : frameH;
-
           const result: any = {
             hasFace: true,
-            faceX: bounds.x / normW,
-            faceY: bounds.y / normH,
-            faceWidth: bounds.width / normW,
-            faceHeight: bounds.height / normH,
-            leftEyeX: lm?.LEFT_EYE ? lm.LEFT_EYE.x / normW : 0,
-            leftEyeY: lm?.LEFT_EYE ? lm.LEFT_EYE.y / normH : 0,
-            rightEyeX: lm?.RIGHT_EYE ? lm.RIGHT_EYE.x / normW : 0,
-            rightEyeY: lm?.RIGHT_EYE ? lm.RIGHT_EYE.y / normH : 0,
-            noseX: lm?.NOSE_BASE ? lm.NOSE_BASE.x / normW : 0,
-            noseY: lm?.NOSE_BASE ? lm.NOSE_BASE.y / normH : 0,
-            mouthLeftX: lm?.MOUTH_LEFT ? lm.MOUTH_LEFT.x / normW : 0,
-            mouthLeftY: lm?.MOUTH_LEFT ? lm.MOUTH_LEFT.y / normH : 0,
-            mouthRightX: lm?.MOUTH_RIGHT ? lm.MOUTH_RIGHT.x / normW : 0,
-            mouthRightY: lm?.MOUTH_RIGHT ? lm.MOUTH_RIGHT.y / normH : 0,
+            faceX: bounds.x,
+            faceY: bounds.y,
+            faceWidth: bounds.width,
+            faceHeight: bounds.height,
+            leftEyeX: lm?.LEFT_EYE?.x ?? 0,
+            leftEyeY: lm?.LEFT_EYE?.y ?? 0,
+            rightEyeX: lm?.RIGHT_EYE?.x ?? 0,
+            rightEyeY: lm?.RIGHT_EYE?.y ?? 0,
+            noseX: lm?.NOSE_BASE?.x ?? 0,
+            noseY: lm?.NOSE_BASE?.y ?? 0,
+            mouthLeftX: lm?.MOUTH_LEFT?.x ?? 0,
+            mouthLeftY: lm?.MOUTH_LEFT?.y ?? 0,
+            mouthRightX: lm?.MOUTH_RIGHT?.x ?? 0,
+            mouthRightY: lm?.MOUTH_RIGHT?.y ?? 0,
             rollAngle: largest.rollAngle ?? 0,
             yawAngle: largest.yawAngle ?? 0,
+            hasEyes: !!(lm?.LEFT_EYE && lm?.RIGHT_EYE),
+            frameW: frame.width,
+            frameH: frame.height,
+            orientation: frame.orientation,
           };
 
           // Pass face contour points as flat [x1,y1,x2,y2,...] array
@@ -244,7 +279,7 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
           if (faceContour && faceContour.length > 0) {
             const flat: number[] = [];
             for (const p of faceContour) {
-              flat.push(p.x / normW, p.y / normH);
+              flat.push(p.x, p.y);
             }
             result.contour = flat;
           }
@@ -305,6 +340,7 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
 
     const onLayout = (e: LayoutChangeEvent) => {
       const { width: w, height: h } = e.nativeEvent.layout;
+      viewSizeRef.current = { w, h };
       setContainerSize({ width: w, height: h });
     };
 
@@ -316,7 +352,7 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
       <View style={styles.container} onLayout={onLayout}>
         <Camera
           ref={cameraRef}
-          style={[StyleSheet.absoluteFill, { transform: [{ scaleX: previewFlipped ? -1 : 1 }] }]}
+          style={[StyleSheet.absoluteFill, { transform: [{ scaleX: flipPreview ? -1 : 1 }] }]}
           device={device}
           isActive={true}
           photo={true}
@@ -329,11 +365,8 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
             imageUri={ghostImageUri}
             opacity={ghostOpacity}
             onOpacityChange={onGhostOpacityChange}
-            ghostLandmarks={faceDetectionAvailable ? ghostLandmarks : null}
-            currentIsMirrored={isMirrored}
-            liveValues={sharedValues}
-            containerWidth={containerSize.width}
-            containerHeight={containerSize.height}
+            placement={ghostPlacement}
+            flip={ghostFlip}
           />
         ) : null}
         <GridOverlay />

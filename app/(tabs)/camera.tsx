@@ -1,9 +1,9 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, Pressable, Alert, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ImageManipulator, FlipType } from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
-import { Colors, Fonts } from '@/constants/theme';
+import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
 import { usePhotos } from '@/hooks/usePhotos';
 import { useGreeting } from '@/hooks/useGreeting';
@@ -16,7 +16,11 @@ import TimerSelector from '@/components/camera/TimerSelector';
 import CapturePreview from '@/components/camera/CapturePreview';
 import type { ViewfinderRef } from '@/components/camera/Viewfinder';
 import { useAutoCapture } from '@/hooks/useAutoCapture';
-import { computeAlignmentScore } from '@/utils/alignment';
+import { computeAlignmentScore, alignmentStatus } from '@/utils/alignment';
+import { previewMirroring } from '@/utils/cameraPreview';
+import { placeGhost } from '@/utils/ghost';
+import type { Size } from '@/utils/faceAlign';
+import { useFaceScanBackfill } from '@/hooks/useFaceScanBackfill';
 import { UserFocus, CaretLeft } from 'phosphor-react-native';
 import type { PhotoEntry, FaceLandmarks } from '@/types';
 
@@ -27,7 +31,7 @@ export default function CameraScreen() {
   const navigation = useNavigation();
   const canGoBack = navigation.canGoBack();
   const { albums, settings } = useAppContext();
-  const { mostRecentPhoto, todayPhoto, addPhoto } = usePhotos(albumId);
+  const { photos: albumPhotos, mostRecentPhoto, todayPhoto, addPhoto } = usePhotos(albumId);
   const { dayNumber } = useGreeting();
   const albumName = albums.find(a => a.id === albumId)?.name ?? albumId;
 
@@ -54,11 +58,34 @@ export default function CameraScreen() {
   const [faceState, setFaceState] = useState<FaceState>({ hasFace: false, faceX: 0, faceY: 0, faceWidth: 0, faceHeight: 0, yawAngle: 0, rollAngle: 0 });
   const [showDebugOverlay, setShowDebugOverlay] = useState(false);
   const [faceSilence, setFaceSilence] = useState(false);
+  const [viewfinderSize, setViewfinderSize] = useState<Size | null>(null);
 
   // Reference target: captured from live video so we can bootstrap
   // auto-capture even when no photo has faceLandmarks yet.
   const [referenceTarget, setReferenceTarget] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [referenceJustSet, setReferenceJustSet] = useState(false);
+
+  // The ghost needs the last photo's face scan: a fresh capture, or an album never played
+  // aligned, hasn't got one yet. One photo, scanned in the background and saved.
+  const ghostScanQueue = useMemo(() => (mostRecentPhoto ? [mostRecentPhoto] : []), [mostRecentPhoto]);
+  useFaceScanBackfill(ghostScanQueue, true);
+
+  const albumScans = useMemo(() => albumPhotos.map((p) => p.faceScan), [albumPhotos]);
+  const ghostPlacement = useMemo(
+    () => (viewfinderSize ? placeGhost(mostRecentPhoto?.faceScan, albumScans, viewfinderSize) : null),
+    [viewfinderSize, mostRecentPhoto?.faceScan, albumScans],
+  );
+  // Show the ghost the way the preview is mirrored. Only captures record their mirroring;
+  // imported photos are drawn as they are.
+  const { shownMirrored } = previewMirroring(facing, isMirrored);
+  const ghostLandmarks = mostRecentPhoto?.faceLandmarks;
+  const ghostFlip = !!ghostLandmarks
+    && (mostRecentPhoto!.cameraDirection === 'front' && ghostLandmarks.isMirrored) !== shownMirrored;
+
+  const handleViewfinderLayout = useCallback((e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setViewfinderSize((prev) => (prev && prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+  }, []);
 
   const today = getToday();
   const dateLabel = `${formatDateLabel(today)} — day ${dayNumber}`;
@@ -172,9 +199,10 @@ export default function CameraScreen() {
 
   // Auto-capture alignment target priority:
   // 1. Reference target (user manually set via long-press)
-  // 2. Most recent photo's face landmarks
-  // 3. Default center position (for bootstrapping)
-  const alignmentTarget = referenceTarget ?? mostRecentPhoto?.faceLandmarks?.faceBounds ?? null;
+  // 2. The ghost's eyes (the last photo, eye-anchored like timelapse playback)
+  // 3. Most recent photo's face landmarks (no face scan available)
+  // 4. Default center position (for bootstrapping)
+  const alignmentTarget = referenceTarget ?? ghostPlacement?.eyes ?? mostRecentPhoto?.faceLandmarks?.faceBounds ?? null;
   const hasAlignmentTarget = alignmentTarget !== null;
 
   const alignmentScore = computeAlignmentScore(faceState, alignmentTarget);
@@ -253,23 +281,49 @@ export default function CameraScreen() {
     setCapturedLandmarks(null);
   };
 
+  const guideOn = showFaceGuide && faceDetectionAvailable;
+  const status = guideOn
+    ? alignmentStatus({ silent: faceSilence, face: faceState, score: alignmentScore, threshold: alignmentThreshold, target: alignmentTarget })
+    : null;
+  const hint = referenceJustSet
+    ? 'reference set'
+    : guideOn && !hasAlignmentTarget
+    ? 'hold shutter to set reference'
+    : null;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Viewfinder
-        ref={cameraRef}
-        ghostImageUri={mostRecentPhoto?.imageUri ?? null}
-        ghostLandmarks={mostRecentPhoto?.faceLandmarks ?? null}
-        facing={facing}
-        ghostOpacity={ghostOpacity}
-        onGhostOpacityChange={handleGhostOpacity}
-        isMirrored={isMirrored}
-        showFaceGuide={showFaceGuide}
-        onFaceState={handleFaceState}
-        onAvailabilityChange={handleAvailabilityChange}
-        onSilence={handleSilence}
-        showDebug={showDebugOverlay}
-        photoQuality={settings.photoQuality}
-      />
+      <View style={styles.viewfinderSlot} onLayout={handleViewfinderLayout}>
+        <Viewfinder
+          ref={cameraRef}
+          ghostImageUri={mostRecentPhoto?.imageUri ?? null}
+          ghostPlacement={ghostPlacement}
+          ghostFlip={ghostFlip}
+          facing={facing}
+          ghostOpacity={ghostOpacity}
+          onGhostOpacityChange={handleGhostOpacity}
+          isMirrored={isMirrored}
+          showFaceGuide={showFaceGuide}
+          onFaceState={handleFaceState}
+          onAvailabilityChange={handleAvailabilityChange}
+          onSilence={handleSilence}
+          showDebug={showDebugOverlay}
+          photoQuality={settings.photoQuality}
+        />
+        {status || hint ? (
+          // Over the viewfinder rather than below it, so the preview keeps the space.
+          <View style={styles.statusPill} pointerEvents="none" accessibilityLiveRegion="polite">
+            {status ? (
+              <Text style={[styles.statusText, { fontFamily: fonts.regular }]}>{status}</Text>
+            ) : null}
+            {hint ? (
+              <Text style={[styles.hintText, { fontFamily: fonts.regular }, referenceJustSet && styles.hintConfirm]}>
+                {hint}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
 
       <View style={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
         <View style={styles.topRow}>
@@ -282,7 +336,10 @@ export default function CameraScreen() {
           >
             <CaretLeft size={20} color={Colors.textPrimary} weight="regular" />
           </Pressable>
-          <Text style={[styles.albumLabel, { fontFamily: fonts.regular }]}>{albumName}</Text>
+          <View style={styles.titleBlock}>
+            <Text style={[styles.albumLabel, { fontFamily: fonts.regular }]} numberOfLines={1}>{albumName}</Text>
+            <Text style={[typography.sectionLabel, styles.dateLabel]} numberOfLines={1}>{dateLabel}</Text>
+          </View>
           <Pressable
             onPress={handleFaceGuideToggle}
             onLongPress={handleDebugToggle}
@@ -299,36 +356,6 @@ export default function CameraScreen() {
             />
           </Pressable>
         </View>
-        <Text style={[typography.sectionLabel, styles.dateLabel]}>{dateLabel}</Text>
-
-        {showFaceGuide && faceDetectionAvailable ? (
-          <Text style={[typography.sectionLabel, styles.faceStatus, { fontFamily: fonts.regular }]}>
-            {faceSilence
-              ? 'face detection stalled'
-              : !faceState.hasFace
-              ? 'no face detected'
-              : alignmentScore >= alignmentThreshold
-              ? 'aligned'
-              : alignmentScore >= alignmentThreshold - 0.15
-              ? 'hold still'
-              : faceState.faceWidth * faceState.faceHeight < 0.04
-              ? 'move closer'
-              : 'center your face'}
-          </Text>
-        ) : null}
-
-        {!hasAlignmentTarget && showFaceGuide && faceDetectionAvailable && !referenceJustSet ? (
-          <Text style={[typography.sectionLabel, styles.longPressHint, { fontFamily: fonts.regular }]}>
-            hold shutter to set reference
-          </Text>
-        ) : null}
-
-        {referenceJustSet ? (
-          <Text style={[typography.sectionLabel, styles.referenceConfirm, { fontFamily: fonts.regular }]}>
-            reference set
-          </Text>
-        ) : null}
-
         {countdown !== null ? (
           <Pressable
             onPress={cancelCountdown}
@@ -384,11 +411,45 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.bgPage,
   },
+  viewfinderSlot: {
+    flex: 1,
+    width: '100%',
+  },
+  statusPill: {
+    position: 'absolute',
+    top: Spacing.md,
+    alignSelf: 'center',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.bgPageTranslucent,
+  },
+  statusText: {
+    fontFamily: Fonts.mono.regular,
+    fontSize: 11,
+    color: Colors.textPrimary,
+    letterSpacing: 1,
+  },
+  hintText: {
+    fontFamily: Fonts.mono.regular,
+    fontSize: 10,
+    color: Colors.textSecondary,
+    letterSpacing: 1,
+  },
+  hintConfirm: {
+    color: Colors.accent,
+  },
   content: {
-    paddingVertical: 16,
+    paddingTop: Spacing.sm,
     paddingHorizontal: 28,
     alignItems: 'center',
-    gap: 12,
+    gap: Spacing.sm,
+  },
+  titleBlock: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
   },
   topRow: {
     flexDirection: 'row',
@@ -413,7 +474,7 @@ const styles = StyleSheet.create({
   dateLabel: {
     color: Colors.textTertiary,
     textAlign: 'center',
-    letterSpacing: 2,
+    letterSpacing: 1,
   },
   countdown: {
     color: Colors.streak,
@@ -425,20 +486,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 1,
     marginTop: 4,
-  },
-  faceStatus: {
-    color: Colors.textTertiary,
-    textAlign: 'center',
-    letterSpacing: 1,
-  },
-  longPressHint: {
-    color: Colors.textTertiary,
-    textAlign: 'center',
-    letterSpacing: 1,
-  },
-  referenceConfirm: {
-    color: Colors.accent,
-    textAlign: 'center',
-    letterSpacing: 1,
   },
 });

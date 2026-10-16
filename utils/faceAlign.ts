@@ -60,6 +60,17 @@ function coverScale(scan: FaceScan, container: Size): number {
   return Math.max(container.w / scan.width, container.h / scan.height);
 }
 
+/** Eye distance in the scan's own px; null if the scan has no usable eyes. */
+export function eyeDistance(scan: FaceScan): number | null {
+  return eyeGeometry(scan)?.dist ?? null;
+}
+
+/** Eye distance a frame shows at under the default cover fit in this container. */
+export function coverEyeDistance(scan: FaceScan, container: Size): number | null {
+  const g = eyeGeometry(scan);
+  return g && container.w > 0 && container.h > 0 ? g.dist * coverScale(scan, container) : null;
+}
+
 export function computeFaceTransform(
   scan: FaceScan,
   container: Size,
@@ -90,8 +101,8 @@ export function medianEyeDistance(scans: (FaceScan | undefined)[], container: Si
   if (!(container.w > 0 && container.h > 0)) return null;
   const dists: number[] = [];
   for (const scan of scans) {
-    const g = scan ? eyeGeometry(scan) : null;
-    if (scan && g) dists.push(g.dist * coverScale(scan, container));
+    const d = scan ? coverEyeDistance(scan, container) : null;
+    if (d !== null) dists.push(d);
   }
   if (dists.length < 2) return null;
   dists.sort((x, y) => x - y);

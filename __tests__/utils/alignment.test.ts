@@ -1,4 +1,4 @@
-import { computeAlignmentScore, shouldPropagateFaceUpdate } from '@/utils/alignment';
+import { computeAlignmentScore, alignmentStatus, shouldPropagateFaceUpdate } from '@/utils/alignment';
 
 const TARGET = { x: 0.35, y: 0.3, width: 0.3, height: 0.4 };
 
@@ -74,5 +74,62 @@ describe('shouldPropagateFaceUpdate', () => {
     expect(shouldPropagateFaceUpdate(true, true, 1099, 1000)).toBe(false);
     expect(shouldPropagateFaceUpdate(true, true, 1100, 1000)).toBe(true);
     expect(shouldPropagateFaceUpdate(false, false, 2000, 1000)).toBe(true);
+  });
+});
+
+describe('computeAlignmentScore with an eye target (the ghost)', () => {
+  const EYES = { x: 0.5, y: 0.4, dist: 0.2 };
+  const face = (eyeMidX: number, eyeMidY: number, eyeDist: number) => ({
+    ...centeredFace(),
+    eyeMidX,
+    eyeMidY,
+    eyeDist,
+  });
+
+  it("scores eyes on the ghost's eyes as a perfect match, wherever the face box is", () => {
+    expect(computeAlignmentScore({ ...face(0.5, 0.4, 0.2), faceX: 0, faceY: 0 }, EYES)).toBeCloseTo(1, 10);
+  });
+
+  it('scores eyes beside the target lower, and far away as 0', () => {
+    const near = computeAlignmentScore(face(0.55, 0.4, 0.2), EYES);
+    expect(near).toBeLessThan(1);
+    expect(near).toBeGreaterThan(0.75);
+    expect(computeAlignmentScore(face(0.9, 0.9, 0.2), EYES)).toBe(0);
+  });
+
+  it('does not count a face much too far from the camera, however centered', () => {
+    expect(computeAlignmentScore(face(0.5, 0.4, 0.1), EYES)).toBe(0);
+    const slightly = computeAlignmentScore(face(0.5, 0.4, 0.18), EYES);
+    expect(slightly).toBeLessThan(1);
+    expect(slightly).toBeGreaterThan(0.75);
+  });
+
+  it('scores 0 when the face has no eyes to compare', () => {
+    expect(computeAlignmentScore(centeredFace(), EYES)).toBe(0);
+  });
+});
+
+describe('alignmentStatus', () => {
+  const EYES = { x: 0.5, y: 0.4, dist: 0.2 };
+  const base = { silent: false, score: 0.3, threshold: 0.75 };
+  const face = (eyeDist: number) => ({ ...centeredFace(), eyeMidX: 0.5, eyeMidY: 0.4, eyeDist });
+
+  it('reports stalls, missing faces, alignment and holding still first', () => {
+    expect(alignmentStatus({ ...base, silent: true, face: face(0.2), target: EYES })).toBe('face detection stalled');
+    expect(alignmentStatus({ ...base, face: { ...face(0.2), hasFace: false }, target: EYES })).toBe('no face detected');
+    expect(alignmentStatus({ ...base, score: 0.8, face: face(0.2), target: EYES })).toBe('aligned');
+    expect(alignmentStatus({ ...base, score: 0.65, face: face(0.2), target: EYES })).toBe('hold still');
+  });
+
+  it("asks you to move closer or back until your eyes are as far apart as the ghost's", () => {
+    expect(alignmentStatus({ ...base, face: face(0.14), target: EYES })).toBe('move closer');
+    expect(alignmentStatus({ ...base, face: face(0.26), target: EYES })).toBe('move back');
+    expect(alignmentStatus({ ...base, face: face(0.2), target: EYES })).toBe('center your face');
+  });
+
+  it('asks a small face to move closer when the target is a face box', () => {
+    const tiny = { ...centeredFace(), faceWidth: 0.1, faceHeight: 0.2 };
+    expect(alignmentStatus({ ...base, face: tiny, target: TARGET })).toBe('move closer');
+    expect(alignmentStatus({ ...base, face: centeredFace(), target: null })).toBe('center your face');
   });
 });
