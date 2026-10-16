@@ -43,7 +43,8 @@ coverage/
 /ios
 /android
 
-# AI tooling
+# Local notes and AI tooling
+REFINEMENT_BACKLOG.md
 .omc/
 .superpowers/
 docs/superpowers/
