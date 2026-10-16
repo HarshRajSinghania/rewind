@@ -1,4 +1,4 @@
-import { SPEEDS, RING_SIZE, frameInterval, playbackStep, ringWindow } from '@/utils/playback';
+import { SPEEDS, RING_AHEAD, RING_BEHIND, frameInterval, playbackStep, ringWindow } from '@/utils/playback';
 
 describe('speeds', () => {
   it('offers 0.5x to 8x, where 1x is 2 photos a second', () => {
@@ -27,16 +27,22 @@ describe('playbackStep', () => {
 });
 
 describe('ringWindow', () => {
-  it('is the playhead and the frames after it', () => {
-    expect(ringWindow(0, 482, RING_SIZE)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  it('is the playhead, the frames after it, then the frames before it: the order to decode them in', () => {
+    expect(ringWindow(100, 482, 2, 4)).toEqual([100, 101, 102, 103, 104, 99, 98]);
   });
 
-  it('wraps around the end of the timelapse', () => {
-    expect(ringWindow(478, 482, 6)).toEqual([478, 479, 480, 481, 0, 1]);
+  it('wraps around both ends of the timelapse', () => {
+    expect(ringWindow(480, 482, 2, 3)).toEqual([480, 481, 0, 1, 479, 478]);
+    expect(ringWindow(0, 482, 2, 1)).toEqual([0, 1, 481, 480]);
   });
 
   it('never repeats a frame in a short album', () => {
-    expect(ringWindow(1, 3, RING_SIZE)).toEqual([1, 2, 0]);
-    expect(ringWindow(0, 0, RING_SIZE)).toEqual([]);
+    expect(ringWindow(1, 3, RING_BEHIND, RING_AHEAD)).toEqual([1, 2, 0]);
+    expect(ringWindow(0, 0, RING_BEHIND, RING_AHEAD)).toEqual([]);
+  });
+
+  it('decodes further ahead than behind, since playback runs forward', () => {
+    expect(RING_AHEAD).toBeGreaterThan(RING_BEHIND);
+    expect(RING_BEHIND).toBeGreaterThan(0);
   });
 });

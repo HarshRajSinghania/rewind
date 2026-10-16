@@ -9,7 +9,7 @@ import { useFont } from '@/context/FontContext';
 import PlayerFrame, { type FrameLayout } from '@/components/timelapse/PlayerFrame';
 import AnimatedText from '@/components/ui/AnimatedText';
 import { computeFaceTransform, medianEyeDistance, type Size } from '@/utils/faceAlign';
-import { frameInterval, playbackStep, ringWindow, RING_SIZE } from '@/utils/playback';
+import { frameInterval, playbackStep, ringWindow, RING_AHEAD, RING_BEHIND } from '@/utils/playback';
 import type { PhotoEntry } from '@/types';
 
 function formatBadgeDate(dateStr: string): string {
@@ -150,9 +150,9 @@ const TimelapsePlayer = forwardRef<TimelapsePlayerHandle, TimelapsePlayerProps>(
 
     useImperativeHandle(ref, () => ({ seekTo: seek, pause: () => pause(false) }), [seek, pause]);
 
-    // Ring: the frame on screen plus the playhead and the frames after it.
+    // Ring: the frame on screen plus the frames around the playhead.
     const ringFrames = useMemo(() => {
-      const list = [view.shown, ...ringWindow(view.frame, photos.length, RING_SIZE)];
+      const list = [view.shown, ...ringWindow(view.frame, photos.length, RING_BEHIND, RING_AHEAD)];
       return list.filter((f, i) => f < photos.length && list.indexOf(f) === i);
     }, [view, photos.length]);
     const ringIdsRef = useRef<ReadonlySet<string>>(new Set());

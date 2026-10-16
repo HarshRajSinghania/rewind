@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { render, screen, fireEvent, act } from '@testing-library/react-native';
+import { RING_AHEAD, RING_BEHIND } from '@/utils/playback';
 import TimelapsePlayer, { type TimelapsePlayerHandle } from '@/components/timelapse/TimelapsePlayer';
 import { FontProvider } from '@/context/FontContext';
 import { frameClocks } from '../helpers/reanimatedMock';
@@ -31,7 +32,7 @@ function photo(i: number, faceScan: FaceScan | undefined = LEVEL): PhotoEntry {
 }
 
 const THREE = [photo(0), photo(1), photo(2, { ...LEVEL, eyes: null })];
-const TWENTY = Array.from({ length: 20 }, (_, i) => photo(i));
+const FORTY = Array.from({ length: 40 }, (_, i) => photo(i));
 const uri = (p: PhotoEntry) => p.imageUri;
 
 async function renderPlayer(props: Partial<React.ComponentProps<typeof TimelapsePlayer>> = {}, { layout = true } = {}) {
@@ -96,10 +97,12 @@ describe('TimelapsePlayer', () => {
     expect(frames().every((f) => f.image.props.cachePolicy === 'memory')).toBe(true);
   });
 
-  it('mounts the playhead and the frames after it, showing only the playhead', async () => {
-    await renderPlayer({ align: true, photos: TWENTY });
-    expect(frames().map((f) => f.uri)).toEqual(TWENTY.slice(0, 12).map(uri));
-    expect(shown().uri).toBe(uri(TWENTY[0]));
+  it('mounts the playhead, the frames after it and a few before it, showing only the playhead', async () => {
+    await renderPlayer({ align: true, photos: FORTY });
+    const ahead = FORTY.slice(0, RING_AHEAD + 1);
+    const behind = FORTY.slice(40 - RING_BEHIND).reverse();
+    expect(frames().map((f) => f.uri)).toEqual([...ahead, ...behind].map(uri));
+    expect(shown().uri).toBe(uri(FORTY[0]));
   });
 
   it('plays unaligned with cover frames and hard cuts when alignment is off', async () => {
@@ -135,13 +138,13 @@ describe('TimelapsePlayer', () => {
 
   it('makes a frame that left the ring load again before it is shown', async () => {
     const ref = React.createRef<TimelapsePlayerHandle>();
-    await renderPlayer({ align: true, photos: TWENTY, ref });
-    await load(TWENTY[11]);
-    await act(async () => { ref.current!.seekTo(12); }); // ring 12..19,0..3 (+ shown 0): frame 11 unmounts
-    expect(frames().map((f) => f.uri)).not.toContain(uri(TWENTY[11]));
-    await load(TWENTY[12]);
-    await act(async () => { ref.current!.seekTo(11); }); // back: a fresh view, not loaded yet
-    expect(shown().uri).toBe(uri(TWENTY[12]));
+    await renderPlayer({ align: true, photos: FORTY, ref });
+    await load(FORTY[15]);
+    await act(async () => { ref.current!.seekTo(25); }); // ring 25..39,0 and 24..20 (+ shown 0): frame 15 unmounts
+    expect(frames().map((f) => f.uri)).not.toContain(uri(FORTY[15]));
+    await load(FORTY[25]);
+    await act(async () => { ref.current!.seekTo(15); }); // back: a fresh view, not loaded yet
+    expect(shown().uri).toBe(uri(FORTY[25]));
   });
 
   it('advances on the UI clock only when due and the next frame has loaded', async () => {
