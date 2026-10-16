@@ -1,6 +1,7 @@
 import {
   computeFaceTransform,
   medianEyeDistance,
+  faceContentPosition,
   EYE_ANCHOR_Y,
   MAX_ZOOM_OVER_COVER,
   type FaceFrameLayout,
@@ -109,5 +110,32 @@ describe('medianEyeDistance', () => {
   it('returns null with fewer than two faces or no container', () => {
     expect(medianEyeDistance([gap(0.2), undefined], BOX)).toBeNull();
     expect(medianEyeDistance([gap(0.1), gap(0.2)], { w: 0, h: 0 })).toBeNull();
+  });
+});
+
+describe('faceContentPosition', () => {
+  const tall = (eyeY: number) => scan([0.4, eyeY], [0.6, eyeY], 1000, 2000);
+
+  it('slides a cover crop down a tall photo to the face', () => {
+    // Square box: the photo is cropped to its middle half by height. Eyes 40% down,
+    // 200 px apart: the face centre (100 px below the eyes) is 45% down the photo.
+    // (0.45 * 200 - 50) / (200 - 100) = 40%.
+    expect(faceContentPosition(tall(0.4), { w: 100, h: 100 })).toEqual({ left: '50%', top: '40%' });
+  });
+
+  it('pins the crop to the edge when the face is near it', () => {
+    expect(faceContentPosition(tall(0.05), { w: 100, h: 100 })!.top).toBe('0%');
+    expect(faceContentPosition(tall(0.95), { w: 100, h: 100 })!.top).toBe('100%');
+  });
+
+  it('works sideways for a wide photo in a tall box', () => {
+    const wide = scan([0.1, 0.5], [0.2, 0.5], 2000, 1000);
+    // Cover: 200x100 in a 100x100 box; face centre x = 0.15 * 200 = 30 -> clamped to 0%.
+    expect(faceContentPosition(wide, { w: 100, h: 100 })).toEqual({ left: '0%', top: '50%' });
+  });
+
+  it('has nothing to say without a face', () => {
+    expect(faceContentPosition(undefined, { w: 100, h: 100 })).toBeUndefined();
+    expect(faceContentPosition({ v: 1, eyes: null, width: 1000, height: 2000 }, { w: 100, h: 100 })).toBeUndefined();
   });
 });

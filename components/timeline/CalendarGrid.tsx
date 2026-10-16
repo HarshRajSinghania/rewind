@@ -5,7 +5,11 @@ import { Colors, Fonts } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
 import { getCalendarMonth, getToday, getFirstWeekday } from '@/utils/dates';
 import { getImageSource } from '@/utils/imageSource';
+import { faceContentPosition } from '@/utils/faceAlign';
 import type { PhotoEntry } from '@/types';
+
+/** Day cells are square (aspectRatio 1). */
+const SQUARE = { w: 1, h: 1 };
 
 interface CalendarGridProps {
   year: number;
@@ -84,6 +88,7 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
                     source={getImageSource(photo.imageUri)}
                     style={styles.thumbnail}
                     contentFit="cover"
+                    contentPosition={faceContentPosition(photo.faceScan, SQUARE)}
                   />
                 </Pressable>
               );
@@ -112,6 +117,7 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
                     source={getImageSource(photo.imageUri)}
                     style={styles.thumbnail}
                     contentFit="cover"
+                    contentPosition={faceContentPosition(photo.faceScan, SQUARE)}
                   />
                 </Pressable>
               );

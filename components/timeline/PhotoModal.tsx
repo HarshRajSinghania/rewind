@@ -122,7 +122,7 @@ function ZoomableImage({ uri, width, height }: ZoomableImageProps) {
         <PhotoImage
           source={getImageSource(uri)}
           style={{ width, height }}
-          contentFit="cover"
+          contentFit="contain"
         />
       </Animated.View>
     </GestureDetector>
@@ -152,8 +152,9 @@ export default function PhotoModal({
 
   const flatListRef = useRef<FlatList>(null);
 
+  // Room for a 3:4 capture at full width; taller imported photos show whole (contain), narrower.
   const photoWidth = screenWidth;
-  const photoHeight = Math.min(screenWidth * (4 / 3), screenHeight * 0.5);
+  const photoHeight = Math.min(screenWidth * (4 / 3), screenHeight * 0.6);
 
   const safeInitialIndex = Math.max(0, Math.min(initialIndex, photos.length - 1));
 

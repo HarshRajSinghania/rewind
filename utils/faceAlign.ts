@@ -109,3 +109,26 @@ export function medianEyeDistance(scans: (FaceScan | undefined)[], container: Si
   const mid = dists.length >> 1;
   return dists.length % 2 ? dists[mid] : (dists[mid - 1] + dists[mid]) / 2;
 }
+
+type Percent = `${number}%`;
+
+/**
+ * `contentPosition` that keeps the face in view under `contentFit="cover"` in a box of
+ * this shape: a tall imported photo center-cropped into a square or wide box otherwise
+ * shows the neck and chest. Aims at the face centre, a little below the eye line.
+ * Only the box's shape matters.
+ */
+export function faceContentPosition(scan: FaceScan | undefined, box: Size): { left: Percent; top: Percent } | undefined {
+  const g = scan ? eyeGeometry(scan) : null;
+  if (!scan || !g || !(box.w > 0 && box.h > 0)) return undefined;
+  const s = coverScale(scan, box);
+  const axis = (focus: number, image: number, view: number): Percent => {
+    const overflow = image - view;
+    const p = overflow > 1e-6 ? Math.min(1, Math.max(0, (focus - view / 2) / overflow)) : 0.5;
+    return `${Math.round(p * 1000) / 10}%`;
+  };
+  return {
+    left: axis(g.midX * s, scan.width * s, box.w),
+    top: axis((g.midY + g.dist / 2) * s, scan.height * s, box.h),
+  };
+}

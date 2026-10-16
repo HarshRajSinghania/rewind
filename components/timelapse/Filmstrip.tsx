@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import PhotoImage from '@/components/ui/PhotoImage';
 import { getImageSource } from '@/utils/imageSource';
+import { faceContentPosition } from '@/utils/faceAlign';
 import type { PhotoEntry } from '@/types';
 
 interface FilmstripProps {
@@ -21,6 +22,7 @@ interface FilmstripProps {
 }
 
 const ITEM_WIDTH = 42; // 38 thumb + 4 margin
+const THUMB = { w: 38, h: 48 };
 const INACTIVE_OPACITY = 0.4;
 
 const FilmstripItem = React.memo(function FilmstripItem({
@@ -46,6 +48,7 @@ const FilmstripItem = React.memo(function FilmstripItem({
           source={getImageSource(item.imageUri)}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
+          contentPosition={faceContentPosition(item.faceScan, THUMB)}
           recyclingKey={item.id}
         />
       </Animated.View>
@@ -121,8 +124,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
   },
   thumb: {
-    width: 38,
-    height: 48,
+    width: THUMB.w,
+    height: THUMB.h,
     borderRadius: 0,
     overflow: 'hidden',
   },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, Pressable, View, Alert } from 'react-native';
+import { ScrollView, StyleSheet, Text, Pressable, View, Alert, useWindowDimensions } from 'react-native';
 import TextInputModal from '@/components/ui/TextInputModal';
 import PinModal from '@/components/ui/PinModal';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,8 +17,13 @@ import { useGreeting } from '@/hooks/useGreeting';
 import { useAlbumLock } from '@/hooks/useAlbumLock';
 import { haptics } from '@/utils/haptics';
 import { getImageSource } from '@/utils/imageSource';
+import { faceContentPosition } from '@/utils/faceAlign';
 import { createAlbum } from '@/utils/albums';
 import type { Album } from '@/types';
+
+const CONTENT_PADDING = 28;
+const HERO_HEIGHT = 300;
+const THUMB_SIZE = 48;
 
 // ─── HeroCard ───────────────────────────────────────────────────────────────
 
@@ -35,6 +40,7 @@ function HeroCard({
 }) {
   const router = useRouter();
   const { todayPhoto } = usePhotos(albumId);
+  const { width: windowWidth } = useWindowDimensions();
   const { currentStreak, weekStatus } = useStreak(albumId, albumCreatedAt);
   const { fonts, typography } = useFont();
   const { isAlbumLocked } = useAlbumLock();
@@ -66,6 +72,7 @@ function HeroCard({
           source={getImageSource(todayPhoto.imageUri)}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
+          contentPosition={faceContentPosition(todayPhoto.faceScan, { w: windowWidth - 2 * CONTENT_PADDING, h: HERO_HEIGHT })}
         />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.heroEmpty]}>
@@ -150,6 +157,7 @@ function AlbumRow({ album, onUnlockRequest, onRenameRequest, onDeleteRequest }: 
   const { totalPhotos, mostRecentPhoto } = usePhotos(album.id);
   const { currentStreak } = useStreak(album.id, album.createdAt);
   const imageUri = mostRecentPhoto?.imageUri ?? null;
+  const thumbPosition = faceContentPosition(mostRecentPhoto?.faceScan, { w: THUMB_SIZE, h: THUMB_SIZE });
   const { typography } = useFont();
   const { isAlbumLocked } = useAlbumLock();
   const locked = isAlbumLocked(album.id);
@@ -202,6 +210,7 @@ function AlbumRow({ album, onUnlockRequest, onRenameRequest, onDeleteRequest }: 
                 source={getImageSource(imageUri)}
                 style={styles.thumbnailImage}
                 contentFit="cover"
+                contentPosition={thumbPosition}
               />
             ) : (
               <View style={styles.thumbnailPlaceholder} />
@@ -314,7 +323,7 @@ export default function HomeScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={[styles.content, { paddingHorizontal: 28 }]}>
+        <View style={[styles.content, { paddingHorizontal: CONTENT_PADDING }]}>
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={styles.skeletonGreeting} />
@@ -443,7 +452,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingHorizontal: 28,
+    paddingHorizontal: CONTENT_PADDING,
   },
 
   // Header
@@ -474,7 +483,7 @@ const styles = StyleSheet.create({
   // Hero card
   heroCard: {
     width: '100%',
-    height: 300,
+    height: HERO_HEIGHT,
     backgroundColor: Colors.bgCard,
     overflow: 'hidden',
     justifyContent: 'flex-end',
@@ -558,17 +567,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   thumbnail: {
-    width: 48,
-    height: 48,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
     overflow: 'hidden',
   },
   thumbnailImage: {
-    width: 48,
-    height: 48,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
   },
   thumbnailPlaceholder: {
-    width: 48,
-    height: 48,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
     backgroundColor: Colors.bgCard,
   },
   rowInfo: {
