@@ -12,12 +12,10 @@ android {
     versionCode 1
     versionName "1.0.0"
   }
+  // MediaPipe reads the model from assets (it ships deflated; a library's noCompress doesn't
+  // reach the app's packaging, and loading it compressed works fine).
   sourceSets {
     main.assets.srcDirs += ['../assets']
-  }
-  androidResources {
-    // MediaPipe memory-maps the model; keep it uncompressed in the APK.
-    noCompress += ['task']
   }
 }
 
