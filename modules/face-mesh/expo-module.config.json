@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["FaceMeshModule"] },
+  "android": { "modules": ["expo.modules.facemesh.FaceMeshModule"] }
+}

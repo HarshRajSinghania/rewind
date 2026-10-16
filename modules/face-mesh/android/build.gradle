@@ -1,0 +1,26 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.rewind.facemesh'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.facemesh"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+  sourceSets {
+    main.assets.srcDirs += ['../assets']
+  }
+  androidResources {
+    // MediaPipe memory-maps the model; keep it uncompressed in the APK.
+    noCompress += ['task']
+  }
+}
+
+dependencies {
+  implementation 'com.google.mediapipe:tasks-vision:1.1.1'
+}
