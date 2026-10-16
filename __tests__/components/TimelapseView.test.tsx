@@ -23,7 +23,8 @@ jest.mock('@/components/timelapse/TimelapsePlayer', () => {
   return { __esModule: true, default: React.forwardRef((props: unknown) => { mockPlayer(props); return null; }) };
 });
 jest.mock('@/components/timelapse/Scrubber', () => () => null);
-jest.mock('@/components/timelapse/Filmstrip', () => () => null);
+const mockFilmstrip = jest.fn();
+jest.mock('@/components/timelapse/Filmstrip', () => (props: unknown) => { mockFilmstrip(props); return null; });
 jest.mock('@/components/timelapse/DateRangeSheet', () => () => null);
 jest.mock('phosphor-react-native', () => ({ CalendarBlank: () => null, Camera: () => null, UserFocus: () => null }));
 
@@ -36,9 +37,10 @@ function photo(date: string): PhotoEntry {
 
 const PHOTOS = [photo('2026-03-08'), photo('2026-03-09')];
 
-function timelapse(): ReturnType<typeof useTimelapse> {
+function timelapse(over: { isPlaying?: boolean; filmstripIndex?: number } = {}): ReturnType<typeof useTimelapse> {
   return {
     playerRef: { current: null }, speed: 1, displayIndex: 0, filteredPhotos: PHOTOS,
+    isPlaying: over.isPlaying ?? false, filmstripIndex: over.filmstripIndex ?? 0, handlePlayingChange: jest.fn(),
     allDates: PHOTOS.map((p) => p.date), rangeStart: PHOTOS[0].date, rangeEnd: PHOTOS[1].date,
     hasDateFilter: false, showDateRange: false, setShowDateRange: jest.fn(),
     handleFrameChange: jest.fn(), handlePlaybackEnd: jest.fn(), handleSeek: jest.fn(),
@@ -47,15 +49,15 @@ function timelapse(): ReturnType<typeof useTimelapse> {
   } as unknown as ReturnType<typeof useTimelapse>;
 }
 
-async function renderView() {
+async function renderView(over: { isPlaying?: boolean; filmstripIndex?: number } = {}) {
   await render(
     <FontProvider>
-      <TimelapseView header={null} timelapse={timelapse()} />
+      <TimelapseView header={null} timelapse={timelapse(over)} />
     </FontProvider>,
   );
 }
 
-const lastPlayerProps = () => mockPlayer.mock.calls.at(-1)?.[0] as { align: boolean; scanProgress: unknown };
+const lastPlayerProps = () => mockPlayer.mock.calls.at(-1)?.[0] as { align: boolean; scanProgress: unknown; onPlayingChange?: unknown };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -91,6 +93,17 @@ describe('TimelapseView face alignment wiring', () => {
     expect(screen.queryByRole('switch', { name: 'align faces' })).toBeNull();
     expect(mockBackfill).toHaveBeenCalledWith(PHOTOS, false);
     expect(lastPlayerProps().align).toBe(false);
+  });
+
+  it('pauses the face scan while playing', async () => {
+    await renderView({ isPlaying: true });
+    expect(mockBackfill).toHaveBeenCalledWith(PHOTOS, false);
+  });
+
+  it('passes the playing-state handler and the throttled filmstrip index', async () => {
+    await renderView({ filmstripIndex: 1 });
+    expect(typeof lastPlayerProps().onPlayingChange).toBe('function');
+    expect(mockFilmstrip.mock.calls.at(-1)?.[0]).toMatchObject({ currentIndex: 1 });
   });
 
   it('passes no progress to the player when the backfill is idle', async () => {

@@ -30,6 +30,8 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
     playerRef,
     speed,
     displayIndex,
+    isPlaying,
+    filmstripIndex,
     filteredPhotos,
     allDates,
     rangeStart,
@@ -38,6 +40,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
     showDateRange,
     setShowDateRange,
     handleFrameChange,
+    handlePlayingChange,
     handlePlaybackEnd,
     handleSeek,
     handleFilmstripSelect,
@@ -49,7 +52,8 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
   // Hidden entirely when the native detector is missing (Expo Go / older dev client).
   const scanAvailable = isFaceScanAvailable();
   const align = scanAvailable && settings.alignFaces;
-  const scanProgress = useFaceScanBackfill(filteredPhotos, align);
+  // Scanning decodes images too; pause it while playing so playback gets the CPU.
+  const scanProgress = useFaceScanBackfill(filteredPhotos, align && !isPlaying);
 
   if (filteredPhotos.length < 2) return null;
 
@@ -86,6 +90,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
             scanProgress={scanProgress.scanning ? scanProgress : null}
             onFrameChange={handleFrameChange}
             onPlaybackEnd={handlePlaybackEnd}
+            onPlayingChange={handlePlayingChange}
           />
         </View>
 
@@ -100,7 +105,7 @@ export default function TimelapseView({ header, timelapse, speedSelectorStyle }:
           />
           <Filmstrip
             photos={filteredPhotos}
-            currentIndex={displayIndex}
+            currentIndex={filmstripIndex}
             onSelect={handleFilmstripSelect}
           />
         </View>
