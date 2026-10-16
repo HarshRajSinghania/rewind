@@ -6,19 +6,26 @@ import { USE_MOCK_DATA, MOCK_PHOTOS, MOCK_PROFILE, MOCK_SETTINGS } from '@/const
 import { cancelAlbumReminder } from '@/utils/notifications';
 import { haptics } from '@/utils/haptics';
 
-function fireAndSave(saveFn: () => Promise<void>): void {
-  enqueueSave(saveFn);
+function fireAndSave(saveFn: () => Promise<void>): Promise<boolean> {
+  return enqueueSave(saveFn);
 }
 
 let saveQueue = Promise.resolve();
 
 // Serial so writes can't race; the catch keeps the queue alive after a failure and
-// surfaces it (log + haptic) instead of leaving an unhandled rejection.
-function enqueueSave(saveFn: () => Promise<void>): void {
-  saveQueue = saveQueue.then(saveFn).catch(e => {
-    console.error('Storage write failed:', e);
-    haptics.error();
-  });
+// surfaces it (log + haptic) instead of leaving an unhandled rejection. Resolves with
+// whether this write reached storage.
+function enqueueSave(saveFn: () => Promise<void>): Promise<boolean> {
+  const done = saveQueue.then(saveFn).then(
+    () => true,
+    (e) => {
+      console.error('Storage write failed:', e);
+      haptics.error();
+      return false;
+    },
+  );
+  saveQueue = done.then(() => undefined);
+  return done;
 }
 
 const DEFAULT_ALBUMS: Album[] = [];
@@ -32,7 +39,8 @@ interface AppContextValue {
   addPhoto: (entry: PhotoEntry) => void;
   addPhotos: (entries: PhotoEntry[]) => { added: number; skipped: number };
   updatePhoto: (id: string, updates: Partial<PhotoEntry>) => void;
-  updatePhotos: (patches: Record<string, Partial<PhotoEntry>>) => void;
+  /** Resolves with whether the patch reached storage (e.g. before deleting a replaced file). */
+  updatePhotos: (patches: Record<string, Partial<PhotoEntry>>) => Promise<boolean>;
   deletePhoto: (id: string) => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
@@ -211,14 +219,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // updatePhoto rewrites the whole array per call, so a 240-photo face-scan backfill
   // through it would mean 240 full writes. Ids not present (e.g. a photo deleted
   // mid-scan) are ignored.
-  const updatePhotos = useCallback((patches: Record<string, Partial<PhotoEntry>>) => {
-    if (Object.keys(patches).length === 0) return;
-    setPhotos(prev => {
-      const next = prev.map(p =>
-        Object.prototype.hasOwnProperty.call(patches, p.id) ? { ...p, ...patches[p.id] } : p
-      );
-      fireAndSave(() => savePhotos(next));
-      return next;
+  const updatePhotos = useCallback((patches: Record<string, Partial<PhotoEntry>>): Promise<boolean> => {
+    if (Object.keys(patches).length === 0) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      setPhotos(prev => {
+        const next = prev.map(p =>
+          Object.prototype.hasOwnProperty.call(patches, p.id) ? { ...p, ...patches[p.id] } : p
+        );
+        // An updater can run twice (StrictMode); the first save to settle answers.
+        fireAndSave(() => savePhotos(next)).then(resolve);
+        return next;
+      });
     });
   }, []);
 

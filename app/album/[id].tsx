@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, useIsFocused, Stack } from 'expo-router';
 import { CaretLeft, Camera, Play, GearSix, LockSimple } from 'phosphor-react-native';
 import Animated, {
   useSharedValue,
@@ -19,6 +19,7 @@ import { trackingStartDate } from '@/utils/streak';
 import { useStreak } from '@/hooks/useStreak';
 import { useAppContext } from '@/context/AppContext';
 import { useAlbumLock } from '@/hooks/useAlbumLock';
+import { usePhotoEncodeBackfill } from '@/hooks/usePhotoEncodeBackfill';
 import { haptics } from '@/utils/haptics';
 import { pickPhotosFromLibrary } from '@/utils/import';
 import ImportSheet, { ImportSource } from '@/components/ui/ImportSheet';
@@ -41,6 +42,10 @@ export default function AlbumDetailScreen() {
 
   const { isAlbumLocked, unlockAlbum } = useAlbumLock();
   const locked = isAlbumLocked(id);
+  const focused = useIsFocused();
+  // Store photos as q95 (fresh captures and imports land here right after saving). Only
+  // while this screen is in front, so playback and the camera get the CPU.
+  usePhotoEncodeBackfill(photos, focused && !locked);
   const [showPinModal, setShowPinModal] = useState(false);
 
   const [currentMonth, setCurrentMonth] = useState(() => {

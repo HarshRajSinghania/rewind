@@ -223,6 +223,38 @@ describe('AppContext', () => {
     await unmount();
   });
 
+  it('updatePhotos resolves true once the patch is on disk, so callers can act on it safely', async () => {
+    const { unmount } = await renderProvider();
+    await act(async () => {
+      ctx!.addPhoto(photo({ id: 'p1', imageUri: 'file:///document/a.jpg' }));
+    });
+    // Await outside act(): inside it React holds the render that runs the update.
+    let pending: Promise<boolean> | undefined;
+    await act(async () => {
+      pending = ctx!.updatePhotos({ p1: { imageUri: 'file:///document/a_q95.jpg' } });
+    });
+    expect(await pending).toBe(true);
+    expect((await storedPhotos())[0].imageUri).toBe('file:///document/a_q95.jpg');
+    await unmount();
+  });
+
+  it('updatePhotos resolves false when the save fails', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { unmount } = await renderProvider();
+    await act(async () => {
+      ctx!.addPhoto(photo({ id: 'p1' }));
+    });
+    await waitFor(async () => expect(await storedPhotos()).toHaveLength(1));
+    jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('disk full'));
+    let pending: Promise<boolean> | undefined;
+    await act(async () => {
+      pending = ctx!.updatePhotos({ p1: { caption: 'x' } });
+    });
+    expect(await pending).toBe(false);
+    errorSpy.mockRestore();
+    await unmount();
+  });
+
   it('updatePhotos with no patches does not write photos', async () => {
     const { unmount } = await renderProvider();
     const setItem = jest.mocked(AsyncStorage.setItem);

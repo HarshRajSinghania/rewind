@@ -8,6 +8,8 @@ export interface PhotoEntry {
   cameraDirection: 'front' | 'back';
   faceLandmarks?: FaceLandmarks;
   faceScan?: FaceScan;
+  /** 'q95' once the file is stored as a q95 JPEG (utils/photoEncode); never re-encoded after. */
+  encoding?: 'q95';
 }
 
 export interface UserProfile {
