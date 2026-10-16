@@ -8,7 +8,7 @@ import { useFont } from '@/context/FontContext';
 import { usePhotos } from '@/hooks/usePhotos';
 import { haptics } from '@/utils/haptics';
 import { buildFaceTrend, compareDays } from '@/utils/faceTrend';
-import { coverEyeDistance, medianEyeDistance, type Size } from '@/utils/faceAlign';
+import { coverEyeDistance, type Size } from '@/utils/faceAlign';
 import ComparePane from '@/components/face/ComparePane';
 import Scrubber from '@/components/timelapse/Scrubber';
 
@@ -22,10 +22,8 @@ export default function CompareScreen() {
   const photos = useMemo(() => all.filter((p) => p.faceScan?.eyes), [all]);
   const trend = useMemo(() => buildFaceTrend(all), [all]);
   const [a, setA] = useState(0);
-  const [b, setB] = useState(Math.max(0, photos.length - 1));
-  const scans = useMemo(() => photos.map((p) => p.faceScan), [photos]);
-  const targetEyeDist = (size: Size) =>
-    medianEyeDistance(scans, size) ?? (photos[0]?.faceScan ? coverEyeDistance(photos[0].faceScan, size) : null);
+  // null = the last photo, whenever the photos arrive.
+  const [b, setB] = useState<number | null>(null);
 
   if (photos.length < 2 || !trend) {
     return (
@@ -35,8 +33,11 @@ export default function CompareScreen() {
     );
   }
   const pa = photos[Math.min(a, photos.length - 1)];
-  const pb = photos[Math.min(b, photos.length - 1)];
+  const pb = photos[Math.min(b ?? photos.length - 1, photos.length - 1)];
   const change = compareDays(trend, pa, pb);
+  // Both faces the same size, large enough that both photos fill their panes (no bands).
+  const targetEyeDist = (size: Size) =>
+    Math.max(coverEyeDistance(pa.faceScan!, size) ?? 0, coverEyeDistance(pb.faceScan!, size) ?? 0) || null;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -51,12 +52,13 @@ export default function CompareScreen() {
         <ComparePane photo={pa} targetEyeDist={targetEyeDist} />
         <ComparePane photo={pb} targetEyeDist={targetEyeDist} />
       </View>
+      <Text style={[styles.dates, { fontFamily: fonts.regular }]}>{pa.date}  →  {pb.date}</Text>
       <Text style={[styles.result, { fontFamily: fonts.regular }]}>
-        {pb.date} vs {pa.date}: trend {fmt(change.trend)} · photos {fmt(change.photo)}
+        trend {fmt(change.trend)} · photos {fmt(change.photo)}
       </Text>
       <View style={styles.scrubbers}>
         <Scrubber currentIndex={a} total={photos.length} startDate={photos[0].date} endDate={photos[photos.length - 1].date} onSeek={setA} />
-        <Scrubber currentIndex={b} total={photos.length} startDate={photos[0].date} endDate={photos[photos.length - 1].date} onSeek={setB} />
+        <Scrubber currentIndex={b ?? photos.length - 1} total={photos.length} startDate={photos[0].date} endDate={photos[photos.length - 1].date} onSeek={setB} />
       </View>
     </SafeAreaView>
   );
@@ -67,7 +69,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 28, paddingVertical: Spacing.lg },
   title: { fontFamily: Fonts.mono.regular, fontSize: 16, color: Colors.textPrimary },
   panes: { flex: 1, flexDirection: 'row', gap: 2, paddingHorizontal: 28 },
-  result: { fontFamily: Fonts.mono.regular, fontSize: 12, color: Colors.textSecondary, textAlign: 'center', paddingVertical: Spacing.md },
+  dates: { fontFamily: Fonts.mono.regular, fontSize: 11, color: Colors.textTertiary, textAlign: 'center', paddingTop: Spacing.md },
+  result: { fontFamily: Fonts.mono.regular, fontSize: 12, color: Colors.textSecondary, textAlign: 'center', paddingBottom: Spacing.md, paddingTop: 2 },
   scrubbers: { paddingHorizontal: 28, paddingBottom: Spacing.xl, gap: Spacing.md },
   note: { fontFamily: Fonts.mono.regular, fontSize: 12, color: Colors.textTertiary, textAlign: 'center', marginTop: 120 },
 });
