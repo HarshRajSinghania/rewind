@@ -1,24 +1,73 @@
-import { StyleSheet } from 'react-native';
-import { render, screen, fireEvent } from '@testing-library/react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { CaretLeft } from 'phosphor-react-native';
+import { Colors, Fonts, Spacing } from '@/constants/theme';
+import { useFont } from '@/context/FontContext';
+import { usePhotos } from '@/hooks/usePhotos';
+import { haptics } from '@/utils/haptics';
+import { buildFaceTrend, compareDays } from '@/utils/faceTrend';
+import { coverEyeDistance, medianEyeDistance, type Size } from '@/utils/faceAlign';
 import ComparePane from '@/components/face/ComparePane';
-import type { PhotoEntry } from '@/types';
+import Scrubber from '@/components/timelapse/Scrubber';
 
-jest.mock('expo-image', () => {
-  const { View } = require('react-native');
-  return { Image: (p: object) => <View testID="pane-image" {...p} /> };
-});
+const fmt = (pct: number | null) => (pct === null ? '—' : `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`);
 
-const photo: PhotoEntry = {
-  id: 'p', albumId: 'a', date: '2026-03-05', imageUri: 'file:///a.jpg', caption: '', capturedAt: '', cameraDirection: 'front',
-  faceScan: { v: 2, eyes: { left: { x: 0.4, y: 0.3 }, right: { x: 0.6, y: 0.3 } }, width: 1000, height: 2000, measure: null },
-};
+export default function CompareScreen() {
+  const { albumId } = useLocalSearchParams<{ albumId: string }>();
+  const router = useRouter();
+  const { fonts } = useFont();
+  const { photos: all } = usePhotos(albumId);
+  const photos = useMemo(() => all.filter((p) => p.faceScan?.eyes), [all]);
+  const trend = useMemo(() => buildFaceTrend(all), [all]);
+  const [a, setA] = useState(0);
+  const [b, setB] = useState(Math.max(0, photos.length - 1));
+  const scans = useMemo(() => photos.map((p) => p.faceScan), [photos]);
+  const targetEyeDist = (size: Size) =>
+    medianEyeDistance(scans, size) ?? (photos[0]?.faceScan ? coverEyeDistance(photos[0].faceScan, size) : null);
 
-it('eye-aligns the photo in its pane at the shared eye distance', async () => {
-  await render(<ComparePane photo={photo} targetEyeDist={() => 60} />);
-  await fireEvent(screen.getByTestId('compare-pane'), 'layout', { nativeEvent: { layout: { width: 150, height: 200 } } });
-  const s = StyleSheet.flatten(screen.getByTestId('pane-image').props.style);
-  // eyes 200 px apart -> scale 0.3; eye midpoint (500, 600)*0.3 lands on (75, 0.4*200).
-  expect(s.width).toBeCloseTo(300, 6);
-  expect(s.left).toBeCloseTo(75 - 150, 6);
-  expect(s.top).toBeCloseTo(80 - 180, 6);
+  if (photos.length < 2 || !trend) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <Text style={[styles.note, { fontFamily: fonts.regular }]}>not enough measured photos to compare yet</Text>
+      </SafeAreaView>
+    );
+  }
+  const pa = photos[Math.min(a, photos.length - 1)];
+  const pb = photos[Math.min(b, photos.length - 1)];
+  const change = compareDays(trend, pa, pb);
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.header}>
+        <Pressable onPress={() => { haptics.tap(); router.back(); }} hitSlop={12} accessibilityRole="button" accessibilityLabel="Go back">
+          <CaretLeft size={20} color={Colors.textPrimary} />
+        </Pressable>
+        <Text style={[styles.title, { fontFamily: fonts.regular }]}>compare</Text>
+        <View style={{ width: 20 }} />
+      </View>
+      <View style={styles.panes}>
+        <ComparePane photo={pa} targetEyeDist={targetEyeDist} />
+        <ComparePane photo={pb} targetEyeDist={targetEyeDist} />
+      </View>
+      <Text style={[styles.result, { fontFamily: fonts.regular }]}>
+        {pb.date} vs {pa.date}: trend {fmt(change.trend)} · photos {fmt(change.photo)}
+      </Text>
+      <View style={styles.scrubbers}>
+        <Scrubber currentIndex={a} total={photos.length} startDate={photos[0].date} endDate={photos[photos.length - 1].date} onSeek={setA} />
+        <Scrubber currentIndex={b} total={photos.length} startDate={photos[0].date} endDate={photos[photos.length - 1].date} onSeek={setB} />
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: Colors.bgPage },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 28, paddingVertical: Spacing.lg },
+  title: { fontFamily: Fonts.mono.regular, fontSize: 16, color: Colors.textPrimary },
+  panes: { flex: 1, flexDirection: 'row', gap: 2, paddingHorizontal: 28 },
+  result: { fontFamily: Fonts.mono.regular, fontSize: 12, color: Colors.textSecondary, textAlign: 'center', paddingVertical: Spacing.md },
+  scrubbers: { paddingHorizontal: 28, paddingBottom: Spacing.xl, gap: Spacing.md },
+  note: { fontFamily: Fonts.mono.regular, fontSize: 12, color: Colors.textTertiary, textAlign: 'center', marginTop: 120 },
 });
