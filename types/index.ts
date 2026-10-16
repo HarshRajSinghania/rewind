@@ -64,6 +64,26 @@ export interface FaceScan {
   /** Upright scanned-image size in px — the aspect source for alignment math. */
   width: number;
   height: number;
+  /** v2+: face measurements; null = scanned, no face. */
+  measure?: FaceMeasure | null;
+}
+
+/** Face measurements from a MediaPipe scan (v2). Widths are ÷ 3D pupil distance. */
+export interface FaceMeasure {
+  /** 2D pupil distance in px of the upright scanned image. */
+  ipd: number;
+  /** ipd ÷ image width: how close the face was to the camera. */
+  closeness: number;
+  jaw: number;
+  lowJaw: number;
+  cheek: number;
+  /** Degrees. */
+  yaw: number;
+  pitch: number;
+  roll: number;
+  /** 0..1 blendshape scores. */
+  smile: number;
+  jawOpen: number;
 }
 
 export type DayStatus = 'captured' | 'missed' | 'upcoming' | 'today-done' | 'today-pending' | 'disabled';
