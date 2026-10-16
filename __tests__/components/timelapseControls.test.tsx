@@ -38,15 +38,16 @@ describe('SpeedSelector', () => {
     expect(screen.getByText('tail')).toBeTruthy();
   });
 
-  it('offers 0.5x to 15x and selects the fast ones', async () => {
+  it('offers 0.5x to 8x and selects the fastest', async () => {
     const onSelect = jest.fn();
     await render(
       <FontProvider>
         <SpeedSelector selectedSpeed={1} onSelect={onSelect} />
       </FontProvider>,
     );
-    for (const label of ['0.5x', '1x', '2x', '4x', '8x', '15x']) expect(screen.getByText(label)).toBeTruthy();
-    await fireEvent.press(screen.getByText('15x'));
-    expect(onSelect).toHaveBeenCalledWith(15);
+    for (const label of ['0.5x', '1x', '2x', '4x', '8x']) expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByText('15x')).toBeNull();
+    await fireEvent.press(screen.getByText('8x'));
+    expect(onSelect).toHaveBeenCalledWith(8);
   });
 });

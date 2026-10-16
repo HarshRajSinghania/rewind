@@ -1,9 +1,9 @@
 /**
  * Timelapse playback timing, shared by the UI-thread clock (worklets) and JS.
- * 1x is 2 photos a second; 15x is ~30.
+ * 1x is 2 photos a second; 8x is 16.
  */
 
-export const SPEEDS = [0.5, 1, 2, 4, 8, 15] as const;
+export const SPEEDS = [0.5, 1, 2, 4, 8] as const;
 
 /** Frames mounted ahead of the playhead so the next ones are already decoded. */
 export const RING_SIZE = 12;

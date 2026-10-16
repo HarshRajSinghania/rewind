@@ -1,10 +1,10 @@
 import { SPEEDS, RING_SIZE, frameInterval, playbackStep, ringWindow } from '@/utils/playback';
 
 describe('speeds', () => {
-  it('offers 0.5x to 15x, where 1x is 2 photos a second', () => {
-    expect([...SPEEDS]).toEqual([0.5, 1, 2, 4, 8, 15]);
+  it('offers 0.5x to 8x, where 1x is 2 photos a second', () => {
+    expect([...SPEEDS]).toEqual([0.5, 1, 2, 4, 8]);
     expect(frameInterval(1)).toBe(500);
-    expect(frameInterval(15)).toBeCloseTo(33.33, 1);
+    expect(frameInterval(8)).toBe(62.5);
   });
 });
 
