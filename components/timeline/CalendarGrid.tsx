@@ -49,8 +49,11 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
       {weeks.map((week, wi) => (
         <View key={wi} style={styles.weekRow}>
           {week.map((date, di) => {
+            // Cells are keyed by date, not grid position: reusing a position's native view
+            // across months carried a missed/today cell's border onto a photo cell on
+            // Android, which then drew nothing (blank thumbnails, same slots every month).
             if (date === null) {
-              return <View key={di} style={styles.cell} />;
+              return <View key={`empty-${di}`} style={styles.cell} />;
             }
 
             const photo = photoMap.get(date) ?? null;
@@ -61,7 +64,7 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
             // Future day, or a day before the album's history with no photo
             if (isFuture || (isBeforeJoin && !photo)) {
               return (
-                <View key={di} style={styles.cell}>
+                <View key={date} style={styles.cell}>
                   <Text style={[styles.dayNumber, { opacity: 0.3, fontFamily: fonts.regular }]}>
                     {parseInt(date.split('-')[2], 10)}
                   </Text>
@@ -73,7 +76,7 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
             if (isToday && photo) {
               return (
                 <Pressable
-                  key={di}
+                  key={date}
                   style={({ pressed }) => [styles.cell, styles.photoCell, styles.todayCell, pressed && { opacity: 0.8 }]}
                   onPress={() => onDayPress(date)}
                 >
@@ -89,7 +92,7 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
             // Today without photo
             if (isToday && !photo) {
               return (
-                <View key={di} style={[styles.cell, styles.todayCell]}>
+                <View key={date} style={[styles.cell, styles.todayCell]}>
                   <Text style={[styles.dayNumber, styles.todayNumber, { fontFamily: fonts.regular }]}>
                     {parseInt(date.split('-')[2], 10)}
                   </Text>
@@ -101,7 +104,7 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
             if (photo) {
               return (
                 <Pressable
-                  key={di}
+                  key={date}
                   style={({ pressed }) => [styles.cell, styles.photoCell, pressed && { opacity: 0.8 }]}
                   onPress={() => onDayPress(date)}
                 >
@@ -118,7 +121,7 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
             if (onEmptyDayPress) {
               return (
                 <Pressable
-                  key={di}
+                  key={date}
                   style={({ pressed }) => [styles.cell, styles.emptyTappableCell, pressed && { opacity: 0.5 }]}
                   onPress={() => onEmptyDayPress(date)}
                 >
@@ -129,7 +132,7 @@ export default function CalendarGrid({ year, month, photos, joinDate, onDayPress
               );
             }
             return (
-              <View key={di} style={styles.cell}>
+              <View key={date} style={styles.cell}>
                 <Text style={[styles.dayNumber, { fontFamily: fonts.regular }]}>
                   {parseInt(date.split('-')[2], 10)}
                 </Text>
