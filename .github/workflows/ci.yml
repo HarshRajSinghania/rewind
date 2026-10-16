@@ -4,17 +4,29 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  verify:
+  checks:
+    name: Typecheck, lint, test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: package.json
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -22,11 +34,40 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Lint
+        run: bun run lint
+
       - name: Tests with coverage
         run: bun run test:coverage
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  expo:
+    name: Expo doctor and bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Expo doctor
         run: bunx expo-doctor
 
-      - name: Bundle smoke test (Metro export, native only)
-        run: bunx expo export --platform ios --platform android
+      - name: Bundle (Metro export, Android and iOS)
+        run: bunx expo export --platform android --platform ios --output-dir dist

@@ -1,0 +1,23 @@
+name: release
+
+# Tag a version (`git tag v1.1.0 && git push origin v1.1.0`) to publish a GitHub Release
+# with notes generated from the merged pull requests and commits since the last tag.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag

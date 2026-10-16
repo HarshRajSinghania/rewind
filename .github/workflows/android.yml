@@ -1,0 +1,67 @@
+name: android
+
+# A real native build: catches breakage in native dependencies, the VisionCamera patch
+# (patches/) and the face-mesh module (modules/) that JS checks can't see.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - bun.lock
+      - app.json
+      - react-native.config.js
+      - modules/**
+      - patches/**
+      - .github/workflows/android.yml
+  pull_request:
+    paths:
+      - package.json
+      - bun.lock
+      - app.json
+      - react-native.config.js
+      - modules/**
+      - patches/**
+      - .github/workflows/android.yml
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate the native project
+        run: bunx expo prebuild --platform android --no-install
+
+      - name: Build (arm64 only, to keep CI quick)
+        working-directory: android
+        run: ./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon

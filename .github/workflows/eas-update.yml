@@ -1,0 +1,52 @@
+name: eas-update
+
+# Publishes an over-the-air update to the `preview` branch after CI passes on main.
+# Needs an EXPO_TOKEN repo secret and a linked EAS project (see CONTRIBUTING.md);
+# without the secret the publish job is skipped.
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: echo "enabled=$([ -n "$EXPO_TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish update
+        env:
+          MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+        run: eas update --branch preview --message "$MESSAGE" --non-interactive

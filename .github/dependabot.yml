@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Workflow actions. App dependencies are pinned by the Expo SDK: upgrade them with
+  # `bunx expo install --fix` (CI's expo-doctor fails when they drift).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
