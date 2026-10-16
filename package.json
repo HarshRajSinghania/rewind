@@ -66,5 +66,8 @@
     "react-test-renderer": "^19.2.8",
     "typescript": "~6.0.3"
   },
-  "private": true
+  "private": true,
+  "patchedDependencies": {
+    "react-native-vision-camera@4.7.3": "patches/react-native-vision-camera@4.7.3.patch"
+  }
 }

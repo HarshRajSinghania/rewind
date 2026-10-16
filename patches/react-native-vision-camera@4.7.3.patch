@@ -1,0 +1,16 @@
+diff --git a/android/src/main/java/com/mrousavy/camera/react/CameraView.kt b/android/src/main/java/com/mrousavy/camera/react/CameraView.kt
+index 64a751eaab0dd341abd0a1794eeadf19a4fded84..6f2191774910692137447d908393bf818c607a2c 100644
+--- a/android/src/main/java/com/mrousavy/camera/react/CameraView.kt
++++ b/android/src/main/java/com/mrousavy/camera/react/CameraView.kt
+@@ -181,7 +181,10 @@ class CameraView(context: Context) :
+         }
+ 
+         // Video
+-        if (video || enableFrameProcessor) {
++        // Rewind patch: frame processors read from their own ImageAnalysis output, so they
++        // don't need a VideoCapture. Adding one made CameraX merge preview + video through
++        // GL stream sharing, which visibly degraded the preview.
++        if (video) {
+           config.video =
+             CameraConfiguration.Output.Enabled.create(
+               CameraConfiguration.Video(isMirrored, videoHdr, videoBitRateOverride, videoBitRateMultiplier)

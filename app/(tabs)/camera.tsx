@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, type LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ImageManipulator, FlipType } from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
@@ -24,8 +24,18 @@ import { useFaceScanBackfill } from '@/hooks/useFaceScanBackfill';
 import { UserFocus, CaretLeft } from 'phosphor-react-native';
 import type { PhotoEntry, FaceLandmarks } from '@/types';
 
+/** Room the top row and shutter row need under the viewfinder. */
+const CONTROLS_MIN_HEIGHT = 200;
+
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  // Photos are 4:3 (the whole sensor), so the viewfinder is too: it shows exactly what gets
+  // saved, instead of a cropped slice stretched to fill a taller box.
+  const viewfinderWidth = Math.min(
+    windowWidth,
+    ((windowHeight - insets.top - insets.bottom - CONTROLS_MIN_HEIGHT) * 3) / 4,
+  );
   const { albumId } = useLocalSearchParams<{ albumId: string }>();
   const router = useRouter();
   const navigation = useNavigation();
@@ -293,7 +303,10 @@ export default function CameraScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.viewfinderSlot} onLayout={handleViewfinderLayout}>
+      <View
+        style={[styles.viewfinderSlot, { width: viewfinderWidth, height: (viewfinderWidth * 4) / 3 }]}
+        onLayout={handleViewfinderLayout}
+      >
         <Viewfinder
           ref={cameraRef}
           ghostImageUri={mostRecentPhoto?.imageUri ?? null}
@@ -412,8 +425,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgPage,
   },
   viewfinderSlot: {
-    flex: 1,
-    width: '100%',
+    alignSelf: 'center',
   },
   statusPill: {
     position: 'absolute',
@@ -441,6 +453,8 @@ const styles = StyleSheet.create({
     color: Colors.accent,
   },
   content: {
+    flex: 1,
+    justifyContent: 'center',
     paddingTop: Spacing.sm,
     paddingHorizontal: 28,
     alignItems: 'center',

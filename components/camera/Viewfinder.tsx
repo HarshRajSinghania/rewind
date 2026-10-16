@@ -356,9 +356,15 @@ const Viewfinder = forwardRef<ViewfinderRef, ViewfinderProps>(
           device={device}
           isActive={true}
           photo={true}
-          video={facePipelineActive}
+          // Android frame processors read their own analysis stream (VisionCamera is patched not
+          // to add a video output for them, which forced a blurry GL-shared preview).
+          video={Platform.OS === 'ios' && facePipelineActive}
           frameProcessor={facePipelineActive ? frameProcessor : undefined}
           photoQualityBalance={qualityBalanceMap[photoQuality]}
+          // The OEM night extension: multi-frame captures, far cleaner indoors (measured ISO
+          // 6264 -> 1000, ~0.85 s). It can't run beside face analysis, so it applies with the
+          // face guide off.
+          lowLightBoost={device.supportsLowLightBoost}
         />
         {ghostImageUri ? (
           <GhostOverlay
