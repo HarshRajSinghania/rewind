@@ -22,7 +22,9 @@ jest.mock('@/components/timelapse/TimelapsePlayer', () => {
   const React = require('react');
   return { __esModule: true, default: React.forwardRef((props: unknown) => { mockPlayer(props); return null; }) };
 });
-jest.mock('@/components/timelapse/Scrubber', () => () => null);
+const mockScrubber = jest.fn();
+jest.mock('@/components/timelapse/Scrubber', () => (props: unknown) => { mockScrubber(props); return null; });
+jest.mock('react-native-reanimated', () => require('../helpers/reanimatedMock').reanimatedMock);
 const mockFilmstrip = jest.fn();
 jest.mock('@/components/timelapse/Filmstrip', () => (props: unknown) => { mockFilmstrip(props); return null; });
 jest.mock('@/components/timelapse/DateRangeSheet', () => () => null);
@@ -104,6 +106,14 @@ describe('TimelapseView face alignment wiring', () => {
     await renderView({ filmstripIndex: 1 });
     expect(typeof lastPlayerProps().onPlayingChange).toBe('function');
     expect(mockFilmstrip.mock.calls.at(-1)?.[0]).toMatchObject({ currentIndex: 1 });
+  });
+
+  it('gives the player, scrubber and filmstrip one shared on-screen frame', async () => {
+    await renderView();
+    const shared = (lastPlayerProps() as { shownFrame?: unknown }).shownFrame;
+    expect(shared).toBeDefined();
+    expect(mockScrubber.mock.calls.at(-1)?.[0]).toMatchObject({ frame: shared });
+    expect(mockFilmstrip.mock.calls.at(-1)?.[0]).toMatchObject({ frame: shared });
   });
 
   it('passes no progress to the player when the backfill is idle', async () => {

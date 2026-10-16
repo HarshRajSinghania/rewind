@@ -1,10 +1,11 @@
 import React, { useRef, useCallback } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, useDerivedValue, runOnJS, type SharedValue } from 'react-native-reanimated';
 import { haptics } from '@/utils/haptics';
 import { Colors, Fonts } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
+import AnimatedText from '@/components/ui/AnimatedText';
 
 interface ScrubberProps {
   currentIndex: number;
@@ -12,6 +13,8 @@ interface ScrubberProps {
   startDate: string;
   endDate: string;
   onSeek: (index: number) => void;
+  /** Frame on screen, driven by the player on the UI thread; follows it exactly when given. */
+  frame?: SharedValue<number>;
 }
 
 function formatShortDate(dateStr: string): string {
@@ -21,15 +24,14 @@ function formatShortDate(dateStr: string): string {
 
 const THUMB_SIZE = 14;
 
-function Scrubber({ currentIndex, total, startDate, endDate, onSeek }: ScrubberProps) {
+function Scrubber({ currentIndex, total, startDate, endDate, onSeek, frame }: ScrubberProps) {
   const { fonts } = useFont();
   const trackWidth = useSharedValue(0);
   const thumbX = useSharedValue(0);
   const lastSeekIndex = useRef(currentIndex);
   const isDragging = useSharedValue(false);
 
-  // Sync thumb position from props when not dragging
-  const progress = total > 1 ? currentIndex / (total - 1) : 0;
+  const counterText = useDerivedValue(() => `${(frame ? frame.value : currentIndex) + 1} / ${total}`);
 
   const doSeek = useCallback((index: number) => {
     if (index !== lastSeekIndex.current) {
@@ -83,23 +85,30 @@ function Scrubber({ currentIndex, total, startDate, endDate, onSeek }: ScrubberP
       return { transform: [{ translateX: thumbX.value - THUMB_SIZE / 2 }] };
     }
     const w = trackWidth.value > 0 ? trackWidth.value : 1;
-    const pos = (total > 1 ? currentIndex / (total - 1) : 0) * w;
+    const index = frame ? frame.value : currentIndex;
+    const pos = (total > 1 ? index / (total - 1) : 0) * w;
     return { transform: [{ translateX: pos - THUMB_SIZE / 2 }] };
-  }, [currentIndex, total]);
+  }, [currentIndex, total, frame]);
 
   const fillStyle = useAnimatedStyle(() => {
     if (isDragging.value) {
       const w = trackWidth.value > 0 ? trackWidth.value : 1;
       return { width: (thumbX.value / w) * 100 + '%' as any };
     }
-    return { width: `${progress * 100}%` };
-  }, [progress]);
+    const index = frame ? frame.value : currentIndex;
+    return { width: `${(total > 1 ? index / (total - 1) : 0) * 100}%` };
+  }, [currentIndex, total, frame]);
 
   return (
     <View style={styles.container}>
       <View style={styles.labels}>
         <Text style={[styles.dateText, { fontFamily: fonts.regular }]}>{formatShortDate(startDate)}</Text>
-        <Text style={[styles.frameText, { fontFamily: fonts.regular }]}>{currentIndex + 1} / {total}</Text>
+        <AnimatedText
+          testID="scrubber-counter"
+          text={counterText}
+          initial={`${currentIndex + 1} / ${total}`}
+          style={[styles.frameText, { fontFamily: fonts.regular }]}
+        />
         <Text style={[styles.dateText, { fontFamily: fonts.regular }]}>{formatShortDate(endDate)}</Text>
       </View>
 
