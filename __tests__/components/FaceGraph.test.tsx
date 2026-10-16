@@ -43,3 +43,23 @@ it('does not redraw while the timelapse re-renders around it with the same photo
   expect(renders.mock.calls.length).toBe(afterLayout);
   svg.Path = original;
 });
+
+describe('FaceGraph line', () => {
+  const ph = (d: number, k = 1): TrendPhoto => ({ id: `q${d}`, date: iso(d), faceScan: { v: 2, eyes: null, width: 1, height: 1, measure: { ...base, jaw: 2 * k, lowJaw: 1.5 * k } } });
+  const pathD = async (photos: TrendPhoto[]) => {
+    await render(<FaceGraph trendPhotos={photos} framePhotos={photos} frame={{ value: 0 } as never} />);
+    await fireEvent(screen.getByTestId('face-graph'), 'layout', { nativeEvent: { layout: { width: 300, height: 24 } } });
+    return String(screen.getByTestId('face-graph-line').props.d);
+  };
+
+  it('breaks across a months-long gap between frames instead of joining them', async () => {
+    const photos = [...Array.from({ length: 60 }, (_, d) => ph(d)), ...Array.from({ length: 60 }, (_, d) => ph(d + 150))];
+    expect((await pathD(photos)).match(/M/g)).toHaveLength(2);
+  });
+
+  it('keeps a tiny wobble small instead of stretching it to the full height', async () => {
+    const photos = Array.from({ length: 120 }, (_, d) => ph(d, d < 60 ? 1 : 1.002)); // 0.2% step
+    const ys = (await pathD(photos)).match(/,(-?[\d.]+)/g)!.map((m) => Number(m.slice(1)));
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(3);
+  });
+});
