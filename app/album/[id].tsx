@@ -21,7 +21,7 @@ import { useAppContext } from '@/context/AppContext';
 import { useAlbumLock } from '@/hooks/useAlbumLock';
 import { usePhotoEncodeBackfill } from '@/hooks/usePhotoEncodeBackfill';
 import { useFaceScanBackfill } from '@/hooks/useFaceScanBackfill';
-import { isFaceScanAvailable } from '@/utils/faceScan';
+import { isFaceScanAvailable, needsFaceScan } from '@/utils/faceScan';
 import { buildFaceTrend, photoReadout } from '@/utils/faceTrend';
 import FaceTrendCard from '@/components/face/FaceTrendCard';
 import type { PhotoEntry } from '@/types';
@@ -322,6 +322,8 @@ export default function AlbumDetailScreen() {
           {faceAvailable && photos.length > 0 ? (
             <FaceTrendCard
               photos={photos}
+              trend={faceTrend}
+              waiting={photos.some(needsFaceScan)}
               progress={faceProgress}
               onSelectDate={openPhotoOnDate}
               onCompare={() => router.push({ pathname: '/album/compare', params: { albumId: id } })}

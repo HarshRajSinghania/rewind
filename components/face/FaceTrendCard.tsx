@@ -1,27 +1,35 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, type GestureResponderEvent } from 'react-native';
-import Svg, { Path, Circle, Line } from 'react-native-svg';
+import Svg, { Path, Line } from 'react-native-svg';
 import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
 import { haptics } from '@/utils/haptics';
-import { buildFaceTrend, comparableCount, faceHeadline, trendGeometry, MIN_COMPARABLE, type TrendPhoto } from '@/utils/faceTrend';
+import { comparableCount, faceHeadline, trendGeometry, MIN_COMPARABLE, type FaceTrend, type TrendPhoto } from '@/utils/faceTrend';
 import type { FaceScanProgress } from '@/hooks/useFaceScanBackfill';
 
 const CHART_HEIGHT = 120;
 
 interface FaceTrendCardProps {
   photos: TrendPhoto[];
+  /** The album's trend (built once by the screen, which also feeds the photo readout). */
+  trend: FaceTrend | null;
+  /** Photos are still waiting to be measured (e.g. while the q95 pass runs first). */
+  waiting: boolean;
   progress: FaceScanProgress;
   onSelectDate: (date: string) => void;
   onCompare: () => void;
 }
 
 /** Face width over time: a smoothed trend over faint daily dots, with a one-line headline. */
-export default function FaceTrendCard({ photos, progress, onSelectDate, onCompare }: FaceTrendCardProps) {
+export default function FaceTrendCard({ photos, trend, waiting, progress, onSelectDate, onCompare }: FaceTrendCardProps) {
   const { fonts } = useFont();
   const [width, setWidth] = useState(0);
-  const trend = useMemo(() => buildFaceTrend(photos), [photos]);
   const geometry = useMemo(() => (trend && width > 0 ? trendGeometry(trend, width, CHART_HEIGHT) : null), [trend, width]);
+  // One path of zero-length round-capped segments: a dot per photo without a node per photo.
+  const dotsPath = useMemo(
+    () => (geometry ? geometry.dots.map((d) => `M${d.x.toFixed(1)},${d.y.toFixed(1)}h0.01`).join('') : ''),
+    [geometry],
+  );
   const headline = trend ? faceHeadline(trend) : null;
 
   const handlePress = (e: GestureResponderEvent) => {
@@ -59,19 +67,19 @@ export default function FaceTrendCard({ photos, progress, onSelectDate, onCompar
             {geometry ? (
               <Svg width={width} height={CHART_HEIGHT}>
                 <Line x1={0} x2={width} y1={CHART_HEIGHT / 2} y2={CHART_HEIGHT / 2} stroke={Colors.borderDivider} strokeWidth={1} />
-                {geometry.dots.map((d) => (
-                  <Circle key={d.photoId} cx={d.x} cy={d.y} r={1.5} fill={Colors.textTertiary} />
-                ))}
+                <Path testID="face-chart-dots" d={dotsPath} stroke={Colors.textTertiary} strokeWidth={3} strokeLinecap="round" fill="none" />
                 <Path d={geometry.line} stroke={Colors.accent} strokeWidth={2} fill="none" />
               </Svg>
             ) : null}
           </Pressable>
         </>
-      ) : !progress.scanning ? (
+      ) : progress.scanning ? null : waiting ? (
+        <Text style={[styles.note, { fontFamily: fonts.regular }]}>measuring soon</Text>
+      ) : (
         <Text style={[styles.note, { fontFamily: fonts.regular }]}>
           needs {MIN_COMPARABLE} comparable photos ({comparableCount(photos)} so far)
         </Text>
-      ) : null}
+      )}
     </View>
   );
 }

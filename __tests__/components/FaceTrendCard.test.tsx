@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react-native';
 import FaceTrendCard from '@/components/face/FaceTrendCard';
 import { FontProvider } from '@/context/FontContext';
-import type { TrendPhoto } from '@/utils/faceTrend';
+import { buildFaceTrend, type TrendPhoto } from '@/utils/faceTrend';
 import type { FaceMeasure } from '@/types';
 
 jest.mock('react-native-svg', () => {
@@ -16,8 +16,12 @@ const photos = (n: number, k = 1): TrendPhoto[] =>
   Array.from({ length: n }, (_, d) => ({ id: `p${d}`, date: iso(d), faceScan: { v: 2, eyes: null, width: 1, height: 1, measure: { ...base, jaw: 2 * (d < n / 2 ? 1 : k), lowJaw: 1.5 * (d < n / 2 ? 1 : k) } } }));
 const idle = { scanning: false, done: 0, total: 0 };
 
-const renderCard = (p: TrendPhoto[], progress = idle, onSelectDate = jest.fn(), onCompare = jest.fn()) =>
-  render(<FontProvider><FaceTrendCard photos={p} progress={progress} onSelectDate={onSelectDate} onCompare={onCompare} /></FontProvider>);
+const renderCard = (p: TrendPhoto[], progress = idle, onSelectDate = jest.fn(), onCompare = jest.fn(), waiting = false) =>
+  render(
+    <FontProvider>
+      <FaceTrendCard photos={p} trend={buildFaceTrend(p)} waiting={waiting} progress={progress} onSelectDate={onSelectDate} onCompare={onCompare} />
+    </FontProvider>,
+  );
 
 it('says how many comparable photos it still needs instead of drawing a chart', async () => {
   await renderCard(photos(12));
@@ -46,4 +50,17 @@ it('opens the photo nearest a tap on the chart', async () => {
   await fireEvent(chart, 'layout', { nativeEvent: { layout: { width: 300, height: 120 } } });
   await fireEvent.press(chart, { nativeEvent: { locationX: 0, locationY: 60 } });
   expect(onSelectDate).toHaveBeenCalledWith('2025-01-01');
+});
+
+it('says measuring is coming instead of "0 so far" while photos wait to be scanned', async () => {
+  await renderCard([], idle, jest.fn(), jest.fn(), true);
+  expect(screen.getByText('measuring soon')).toBeTruthy();
+  expect(screen.queryByText(/so far/)).toBeNull();
+});
+
+it('draws all the daily dots as one path', async () => {
+  await renderCard(photos(100));
+  const chart = screen.getByTestId('face-chart');
+  await fireEvent(chart, 'layout', { nativeEvent: { layout: { width: 300, height: 120 } } });
+  expect(String(screen.getByTestId('face-chart-dots').props.d).match(/M/g)).toHaveLength(100);
 });
