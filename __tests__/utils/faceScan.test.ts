@@ -76,6 +76,28 @@ it('deletes the copy and rethrows when detection fails', async () => {
   expect(deletedUris).toContain(TMP);
 });
 
+it('stores compact numbers, far below the measurement noise', async () => {
+  mockManipulator();
+  const mesh = meshAt(1024, 2252);
+  mesh.landmarks = mesh.landmarks.map((v: number, i: number) => v + (i % 7) * 1.234567e-7);
+  jest.mocked(detectFaceMesh).mockResolvedValue({ ...mesh, blendshapes: { mouthSmileLeft: 0.0123456, mouthSmileRight: 0.0123456, jawOpen: 0.0345678 } });
+  const scan = (await scanPhoto(SRC)) as unknown as { measure: Record<string, number>; eyes: { left: { x: number } } };
+  const decimals = (v: number) => (String(v).split('.')[1] ?? '').length;
+  expect(decimals(scan.measure.ipd)).toBeLessThanOrEqual(1);
+  expect(decimals(scan.measure.yaw)).toBeLessThanOrEqual(2);
+  expect(decimals(scan.measure.smile)).toBeLessThanOrEqual(3);
+  expect(String(scan.measure.jaw).replace('.', '').replace(/^0+/, '').length).toBeLessThanOrEqual(5);
+  expect(decimals(scan.eyes.left.x)).toBeLessThanOrEqual(5);
+});
+
+it('rejects a malformed native result instead of storing NaN', async () => {
+  // One NaN measurement would turn the whole album's trend into NaN.
+  mockManipulator();
+  jest.mocked(detectFaceMesh).mockResolvedValue({ ...meshAt(1024, 2252), matrix: [] });
+  await expect(scanPhoto(SRC)).rejects.toThrow('malformed face mesh');
+  expect(deletedUris).toContain(TMP);
+});
+
 describe('native memory', () => {
   it('releases the native image once saved, even if saving fails', async () => {
     // A first-open backfill scans hundreds of photos; each unreleased ImageRef holds a
