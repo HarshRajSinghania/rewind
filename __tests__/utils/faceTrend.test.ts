@@ -129,3 +129,21 @@ describe('trendGeometry', () => {
     expect(g.line.match(/M/g)!.length).toBe(2);
   });
 });
+
+describe('trendAt on irregular data', () => {
+  it('finds the same nearest trend point as a full scan, at every date', () => {
+    // Irregular days with gaps, so the nearest point is sometimes before, sometimes after.
+    const days = [0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13, 40, 41, 42, 43, 44, 46, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103];
+    const photos: TrendPhoto[] = days.map((d) => ({ id: `p${d}`, date: iso(d), faceScan: { v: 2, eyes: null, width: 1, height: 1, measure: { ...base, jaw: 2 + d / 1000, lowJaw: 1.5 + d / 1000 } } }));
+    const t = buildFaceTrend(photos)!;
+    for (let d = -20; d <= 125; d++) {
+      let best: number | null = null;
+      let gap = 16;
+      for (const p of t.points) {
+        const g = Math.abs(p.day - t.points[0].day - d);
+        if (p.trend !== null && g < gap) { best = p.trend; gap = g; }
+      }
+      expect(trendAt(t, iso(d))).toBe(best);
+    }
+  });
+});

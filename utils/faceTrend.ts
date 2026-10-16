@@ -114,16 +114,32 @@ export function buildFaceTrend(photos: TrendPhoto[]): FaceTrend | null {
   };
 }
 
-/** Trend at a date: the nearest trend point within 15 days. */
+/** Trend at a date: the nearest trend point within 15 days (binary search; points are by day). */
 export function trendAt(t: FaceTrend, date: string): number | null {
   const d = dayOf(date);
+  const pts = t.points;
+  // First point on or after d.
+  let lo = 0;
+  let hi = pts.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (pts[mid].day < d) lo = mid + 1;
+    else hi = mid;
+  }
+  // Walk outwards to the nearest point that has a trend, earlier one first on a tie.
   let best: number | null = null;
   let bestGap = HALF_WINDOW + 1;
-  for (const p of t.points) {
-    const gap = Math.abs(p.day - d);
-    if (p.trend !== null && gap < bestGap) {
-      best = p.trend;
-      bestGap = gap;
+  for (let i = lo - 1; i >= 0 && d - pts[i].day < bestGap; i--) {
+    if (pts[i].trend !== null) {
+      best = pts[i].trend;
+      bestGap = d - pts[i].day;
+      break;
+    }
+  }
+  for (let i = lo; i < pts.length && pts[i].day - d < bestGap; i++) {
+    if (pts[i].trend !== null) {
+      best = pts[i].trend;
+      break;
     }
   }
   return best;
