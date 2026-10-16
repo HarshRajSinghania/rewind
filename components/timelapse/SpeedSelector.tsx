@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, ViewStyle } from 'react-native';
 import { haptics } from '@/utils/haptics';
 import { Colors, Fonts } from '@/constants/theme';
 import { useFont } from '@/context/FontContext';
+import { SPEEDS } from '@/utils/playback';
 
 interface SpeedSelectorProps {
   selectedSpeed: number;
@@ -12,18 +13,13 @@ interface SpeedSelectorProps {
   trailing?: React.ReactNode;
 }
 
-const SPEEDS = [
-  { label: '0.5x', value: 0.5 },
-  { label: '1x', value: 1 },
-  { label: '2x', value: 2 },
-  { label: '4x', value: 4 },
-];
 
 function SpeedSelector({ selectedSpeed, onSelect, style, trailing }: SpeedSelectorProps) {
   const { fonts } = useFont();
   return (
     <View style={[styles.row, style]}>
-      {SPEEDS.map(({ label, value }) => {
+      {SPEEDS.map((value) => {
+        const label = `${value}x`;
         const isActive = selectedSpeed === value;
         return (
           <Pressable
@@ -47,12 +43,14 @@ export default React.memo(SpeedSelector);
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 24,
+    // Six speeds + the align toggle: spread across the width instead of fixed gaps.
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   item: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
   },
   label: {
     fontFamily: Fonts.mono.regular,
