@@ -86,6 +86,22 @@ describe('useFaceScanBackfill', () => {
     expect(Object.keys(mockUpdatePhotos.mock.calls[0][0])).toEqual([photos[0].id, photos[1].id]);
   });
 
+  it('reports overall progress, counting photos scanned on earlier visits', async () => {
+    // Per-visit counts ("aligning 0/169") read as starting over; show "313/482"-style totals.
+    const first = deferred<FaceScan>();
+    scan.mockReturnValueOnce(first.promise).mockResolvedValue(SCANNED);
+    const photos = [
+      makePhoto(0, SCANNED), makePhoto(1, SCANNED), makePhoto(2, SCANNED),
+      makePhoto(3), makePhoto(4),
+    ];
+
+    const { result } = await renderHook(() => useFaceScanBackfill(photos, true));
+    await waitFor(() => expect(result.current).toEqual({ scanning: true, done: 3, total: 5 }));
+
+    await act(async () => { first.resolve(SCANNED); });
+    await waitFor(() => expect(result.current).toEqual(IDLE));
+  });
+
   it('stops when unmounted and keeps the in-flight result', async () => {
     const first = deferred<FaceScan>();
     scan.mockReturnValueOnce(first.promise).mockResolvedValue(SCANNED);

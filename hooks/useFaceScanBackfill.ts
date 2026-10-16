@@ -5,6 +5,7 @@ import type { PhotoEntry } from '@/types';
 
 export const FACE_SCAN_FLUSH_EVERY = 20;
 
+/** Overall progress for the given photos: `done` includes scans saved on earlier visits. */
 export interface FaceScanProgress {
   scanning: boolean;
   done: number;
@@ -43,7 +44,6 @@ export function useFaceScanBackfill(photos: PhotoEntry[], enabled: boolean): Fac
     let cancelled = false;
     let buffer: Record<string, Partial<PhotoEntry>> = {};
     let buffered = 0;
-    let done = 0;
 
     const flush = () => {
       if (buffered === 0) return;
@@ -58,7 +58,10 @@ export function useFaceScanBackfill(photos: PhotoEntry[], enabled: boolean): Fac
           const queue = pendingScans(photosRef.current, attemptedRef.current);
           const next = queue[0];
           if (!next) break;
-          setProgress({ scanning: true, done, total: done + queue.length });
+          // Overall progress for these photos, counting scans saved on earlier visits:
+          // everything not still queued is done (this visit's attempts included).
+          const all = photosRef.current.length;
+          setProgress({ scanning: true, done: all - queue.length, total: all });
           attemptedRef.current.add(next.id);
           try {
             const result = await scanPhoto(next.imageUri);
@@ -69,7 +72,6 @@ export function useFaceScanBackfill(photos: PhotoEntry[], enabled: boolean): Fac
           } catch (e) {
             console.warn('[faceScan] skipping photo for this session:', next.id, e);
           }
-          done++;
         }
       } finally {
         flush();
